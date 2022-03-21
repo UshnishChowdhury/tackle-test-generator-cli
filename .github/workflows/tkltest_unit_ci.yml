@@ -10,6 +10,7 @@ on:
       - 'doc/**'
       - '**.md'
       - '.github/workflows/tkltest_ui_ci.yml'
+      - '.gitattributes'
       - 'test/ui/**'
   pull_request:
     paths-ignore:
@@ -20,6 +21,7 @@ on:
       - 'doc/**'
       - '**.md'
       - '.github/workflows/tkltest_ui_ci.yml'
+      - '.gitattributes'
       - 'test/ui/**'
 
 jobs:
@@ -41,7 +43,7 @@ jobs:
     - name: Install prerequisites
       run: |
         ant -version
-        sudo apt-get install -y bats libxml2-utils
+        sudo apt-get update && sudo apt-get install -y bats libxml2-utils
         bats --version
         xmllint --version
     - name: Create maven settings.xml

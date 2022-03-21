@@ -144,10 +144,6 @@ JACOCO_MERGED_DATA_FOR_AUGMENTATION = 'ctd-guided-augmented.exec'
 
 JACOCO_CLI_JAR_NAME = 'org.jacoco.cli-0.8.7-nodeps.jar'
 
-# Suffix for dependencies directory
-
-DEPENDENCIES_DIR_SUFFIX = '-app-dependencies'
-
 ####### tkltest-ui constants #######
 
 # output directory for generated UI tests
@@ -168,3 +164,9 @@ CRAWLJAX_JAR = os.path.join(TKLTEST_UI_LIB_DOWNLOAD_DIR, 'crawljax-examples-{}.j
 ANTLR_JAR = os.path.join(TKLTEST_UI_LIB_DOWNLOAD_DIR, 'antlr4-runtime-4.7.2.jar')
 COMMONS_CLI_JAR = os.path.join(TKLTEST_UI_LIB_DOWNLOAD_DIR, 'commons-cli-1.4.jar')
 TOML_JAR = os.path.join(TKLTEST_UI_LIB_DOWNLOAD_DIR, 'tomlj-1.0.0.jar')
+
+# generated test class
+CRAWLJAX_API_TEST_FILE = os.path.join('src', 'test', 'java', 'generated', 'GeneratedTests.java')
+SELENIUM_API_TEST_ROOT = 'selenium-api-tests'
+SELENIUM_API_TEST_CLASS_DIR = os.path.join(SELENIUM_API_TEST_ROOT, 'src', 'test', 'java', 'generated')
+SELENIUM_API_TEST_FILE = os.path.join(SELENIUM_API_TEST_CLASS_DIR, 'GeneratedTests.java')
