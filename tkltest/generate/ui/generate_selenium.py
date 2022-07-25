@@ -1,8 +1,11 @@
 # ***************************************************************************
-# Copyright IBM Corporation 2022
+# Copyright IBM Corporation 2021
 #
-# Licensed under the Eclipse Public License 2.0, Version 2.0 (the "License");
+# Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -21,6 +24,10 @@ import os.path
 
 from tkltest.util import constants, logging_util
 
+from tkltest.generate.ui.heuristic_labels import HeuristicLabel
+
+from importlib import resources
+
 # names and paths for generated code files
 _POM_FILE = 'pom.xml'
 _CRAWL_PATHS_FILE = 'CrawlPaths.json'
@@ -28,11 +35,9 @@ _CRAWL_PATHS_FILE = 'CrawlPaths.json'
 
 def generate_selenium_api_tests(config, crawl_dir):
     """Generates test cases that use the Selenium API.
-
     Processes crawl path information created by crawljax to generate test cases that use the Selenium API
     for performing actions on the app web UI. Removes crawljax-generated artifacts that are not required
     for Selenium API test cases.
-
     Args:
         config (dict): Configuration information for test generation
         crawl_dir (dict): Root crawl directory created by Crawljax for the current test-generation run
@@ -43,10 +48,11 @@ def generate_selenium_api_tests(config, crawl_dir):
     browser = config['generate']['browser']
 
     # initialize jinja env
-    searchpath = [os.path.join('tkltest', 'generate', 'ui', 'templates'), 'templates']
-    logging.info('Creating jinja environment with searchpath={})'.format(searchpath))
+    # searchpath = [os.path.join('tkltest', 'generate', 'ui', 'templates'), 'templates']
+    # logging.info('Creating jinja environment with searchpath={})'.format(searchpath))
     jinja_env = jinja2.Environment(
-        loader=jinja2.FileSystemLoader(searchpath=searchpath),
+        # loader=jinja2.FileSystemLoader(searchpath=searchpath),
+        loader=jinja2.PackageLoader('tkltest.generate.ui'),
         trim_blocks=True,
         lstrip_blocks=True,
         extensions=['jinja2.ext.loopcontrols', 'jinja2.ext.do']
@@ -83,10 +89,20 @@ def generate_selenium_api_tests(config, crawl_dir):
 
     # iterate over crawl paths and construct context for each test method
     method_name_count = {}
+
+    # get heuristic labels for each eventable based on its ranked attributes
+    with resources.path('tkltest.generate.ui', 'ranked_attributes.json') as attr_file:
+        heuristic_label = HeuristicLabel(str(attr_file))
+
+    # # to store eventable id : eventable label
+    # heuristic_label_dict = dict()
+    heuristic_label.get_element_and_method_labels(crawl_paths)
+
     for path_num, crawl_path in enumerate(crawl_paths):
         # for each path create a jinja context for the test method to be generated
         method_name = __create_method_name_for_path(crawl_path)
         logging.info('Path {}: length={}, {}'.format(path_num, len(crawl_path), method_name))
+        method_path = method_name[10:] # first 10 characters are 'test_path_'
         if method_name in method_name_count:
             method_name_count[method_name] = method_name_count[method_name] + 1
             method_name = '{}_dup{}'.format(method_name, method_name_count[method_name])
@@ -94,12 +110,14 @@ def generate_selenium_api_tests(config, crawl_dir):
         else:
             method_name_count[method_name] = 0
         method_context = {
+            'comment': heuristic_label.method_labels[method_path],
             'priority': path_num,
             'name': method_name,
             'eventables': []
         }
         for eventable in crawl_path:
-            method_context['eventables'].append(__get_context_for_eventable(eventable))
+            label = heuristic_label.eventable_labels[eventable['id']]
+            method_context['eventables'].append(__get_context_for_eventable(eventable, label))
         jinja_context['test_methods'].append(method_context)
 
     # render template to generate source code for test class
@@ -115,9 +133,7 @@ def generate_selenium_api_tests(config, crawl_dir):
 
 def __create_method_name_for_path(path):
     """Creates method name from crawl/test path.
-
     Creates test method name for the given path by concatenating IDs of the states in the path.
-
     Args:
         path (str): crawl/test path to create test method name for
     Returns:
@@ -129,9 +145,8 @@ def __create_method_name_for_path(path):
     return 'test_path_{}'.format('_'.join(eventable_ids))
 
 
-def __get_context_for_eventable(eventable):
+def __get_context_for_eventable(eventable, label):
     """Creates jinja context for an eventable.
-
     Creates and returns jinja context for the given eventable for rendering the test class code template.
     """
     context = {
@@ -139,24 +154,24 @@ def __get_context_for_eventable(eventable):
         'by_method': __get_by_method_for_eventable(eventable['identification']),
         'related_frame': eventable['relatedFrame'],
         'form_inputs': [],
-        'comment': json.dumps(eventable['element'])
+        # 'comment': json.dumps(eventable['element'])
+        'comment': label[0]
     }
-    for form_input in eventable['relatedFormInputs']:
+    for i, form_input in enumerate(eventable['relatedFormInputs']):
         context['form_inputs'].append({
             'type': form_input['type'],
             'by_method': __get_by_method_for_eventable(form_input['identification']),
             'value': form_input['inputValues'][0]['value'],
-            'checked': "true" if form_input['inputValues'][0]['checked'] is True else "false"
+            'checked': "true" if form_input['inputValues'][0]['checked'] is True else "false",
+            'comment': label[1][i]
         })
     return context
 
 
 def __get_by_method_for_eventable(elem_identification):
     """Computes Selenium's By method to use for the given web element identification info.
-
     Computes Selenium's By method to be used for locating the web element with the given identification
     information. Maps identification's "how" value to one of the Selenium API methods.
-
     Args:
         elem_identification (dict): identification information for a web element
     Returns:
@@ -179,7 +194,6 @@ def __get_by_method_for_eventable(elem_identification):
 
 def __write_generated_code(pom_xml, test_class_code, crawl_dir):
     """Writes generated pom and test class code to files.
-
     Writes pom and test class to files under selenium API test root dir. Copies testng.xml from the crawl
     root dir to the selenium API test root dir
     """
@@ -200,7 +214,6 @@ def __write_generated_code(pom_xml, test_class_code, crawl_dir):
 
 def __clean_up_crawl_artifacts(crawl_dir):
     """Cleans up crawl artifacts.
-
     Deletes crawl artifacts related to crawljax API test cases. Retains the crawl model and related visualization
     artifacts.
     """
@@ -243,6 +256,6 @@ if __name__ == '__main__':  # pragma: no cover
             'wait_after_reload': 500
         }
     }
-    # app_crawl_dir = '../../../tkltest-output-ui-petclinic/petclinic_localhost_2mins/localhost/crawl0'
-    app_crawl_dir = '../../../tkltest-output-ui-addressbook/addressbook_localhost_3mins/localhost/crawl0'
+    app_crawl_dir = '../../../tkltest-output-ui-petclinic/petclinic_localhost_2mins/localhost/crawl1'
+    # app_crawl_dir = '../../../tkltest-output-ui-addressbook/addressbook_localhost_3mins/localhost/crawl0'
     generate_selenium_api_tests(app_config, app_crawl_dir)

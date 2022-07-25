@@ -1,8 +1,11 @@
 # ***************************************************************************
-# Copyright IBM Corporation 2022
+# Copyright IBM Corporation 2021
 #
-# Licensed under the Eclipse Public License 2.0, Version 2.0 (the "License");
+# Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -183,6 +186,14 @@ __options_spec = {
             'default_value': 0,
             'help_message': 'maximum UI pages/states to discover during crawl; default is 0 (unlimited)'
         },
+        'max_explore_action': {
+            'required': False,
+            'is_toml_option': True,
+            'is_cli_option': False,
+            'type': int,
+            'default_value': 1,
+            'help_message': 'maximum number of times to explore a discovered action; default is 1'
+        },
         'include_iframes': {
             'required': False,
             'is_toml_option': True,
@@ -335,7 +346,7 @@ __options_spec_internal = {
             'is_toml_option': True,
             'is_cli_option': False,
             'type': float,
-            'default_value': 0,
+            'default_value': 0.0,
             'help_message': 'Threshold value for determining similar/duplicate states for the RTED algorithm'
         }
 

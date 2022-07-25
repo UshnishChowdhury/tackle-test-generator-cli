@@ -48,6 +48,7 @@ The following table lists the main configuration options of TackleTest-UI.
 | browser                             | -b/--browser         | browser on which to launch app under test for crawling and test generation; default is chrome_headless  |
 | time_limit                          | -t/--time-limit      | maximum crawl time (in minutes); default is 5 min                                                       |
 | max_states                          |                      | maximum UI pages/states to discover during crawl; default is 0 (unlimited)                              |
+| max_explore_action                   |                     | maximum number of times to explore a discovered action; default is 1                                    |
 | include_iframes                     |                      | if the AUT has iframes that need to be covered, set this option to true; default is false               |
 | wait_after_event                    |                      | the time to wait (in milliseconds) after an event has been fired; default is 500ms                      |
 | wait_after_reload                   |                      | the time to wait (in milliseconds) after URL load; default is 500; default is 500ms                     |
@@ -64,6 +65,7 @@ We provide further explanation of some of these configuration options.
 - `browser`: TackleTest-UI currently supports test generation on the Chrom browser only and choices for this option are `chrome` and `chrome_headless`. In the future, additional browsers, such as Firefox, will be supported.
 - `time_limit`: This is used to control the total duration of crawling and is specified in minutes; the default value of 5 minutes would typically not be sufficient for adequate exploration of most webapps. This value should be set to something larger, e.g., 180 for a 3-hour crawl.
 - `max_states`: Limiting the number of states to be discovered is another way, apart from time limit, for controlling app exploration. The default value is `0`, which translates to unlimited number of states. The crawler uses sophisticated state abstraction functions for determining what constitutes a new state of the app under test; for example, a search results page that can have many different concrete states or search results (depending on the search query) would be considered as one abstract state.
+- `max_explore_action`: Number of times to explore a discovered action. The default is `1`, i.e., once. Increasing this value can be desired because CrawlJax defines an abstraction on actions, hence repeating discovered actions may lead to discovering new crawl paths when the abstraction is not accurate enough. 
 - `include_iframes`: If the app under test uses the `iframe` HTML tag for inlinne frames, and such frames have to be explored, this option should be set to true (default is false). Setting this option to true enables frame handling during crawling.
 - `wait_after_event`: This is the duration in millisecond that the crawler waits after firing an event (i.e., performing an action such as click) on the app interface. The defgault value of 500ms generally works well, but would you might want to increase this if there are latencies in the app under test.
 - `wait_after_reload`: This is the duration in millisecond that the crawler waits after reloading the app's main URL. The default value is 500ms and should be increased if tere are latencies involved in loading the app URL.
@@ -172,7 +174,7 @@ The clickables specification consists of `click` and `dont_click` parts, corresp
 that are specified in the same way---consisting of a set of element-level specifications. An element-level
 specification identifies one or more web elements as follows:
 
-1. `tag_name`: string specifying HTML tag
+1. `tag_name`: string, or a list of strings, specifying HTML tag(s)
 2. optionally, one of `with_attribute`, `with_text`, or `under_xpath`, taking the following structure
     ```buildoutcfg
     with_attribute = { attr_name = "", attr_value = ""}
@@ -191,12 +193,12 @@ To illustrate, here are a few examples of `click` specifications:
 
 # click div elements with id "is_clickable"
 [[click.element]]
-  tag_name = "div"
+  tag_name = ["div"]
   with_attribute = { attr_name = "id", attr_value = "is_clickable"}
 
-# click tag1 elements with text "some text"
+# click tag1 and tag2 elements with text "some text"
 [[click.element]]
-  tag_name = "tag1"
+  tag_name = ["tag1", "tag2"]
   with_text = "some text"
 
 # click div elements that occur under the matching xpath
@@ -209,13 +211,12 @@ To illustrate, here are a few examples of `click` specifications:
 
 ```buildoutcfg
 # do not click any anchor element
-# (do not click spec for all occurrences of a tag is unlikely to be used but is supported)
 [[dont_click.element]]
-  tag_name = "a"
+  tag_name = ["a"]
 
 # do not click input elements with id "Delete records"
 [[dont_click.element]]
-  tag_name = "input"
+  tag_name = ["input"]
   with_attribute = { attr_name = "id", attr_value = "Delete records"}
 
 # do not click button elements with name "Update record..."
@@ -228,10 +229,10 @@ To illustrate, here are a few examples of `click` specifications:
   tag_name = "a"
   with_text = "Upload file"
 
-# do not click anchor elements that occur under the matching xpath
+# do not click div and tag123 elements that occur under the matching xpath
 [[dont_click.element]]
-  tag_name = "a"
-  under_xpath = "//*[@id=\"xyz\"]"
+  tag_name = ["div", "tag123"]
+  under_xpath = "//*[@id=\"primary-links\"]/li"
 ```
 
 It also possible to exclude an entire tree of web elements by using the `under_xpath` specifier with

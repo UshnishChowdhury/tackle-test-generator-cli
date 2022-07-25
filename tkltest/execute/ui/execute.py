@@ -1,8 +1,11 @@
 # ***************************************************************************
-# Copyright IBM Corporation 2022
+# Copyright IBM Corporation 2021
 #
-# Licensed under the Eclipse Public License 2.0, Version 2.0 (the "License");
+# Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -49,7 +52,7 @@ def process_execute_command(config):
         api_type, app_name, app_url, browser
     ))
     try:
-        command_util.run_command("mvn test", verbose=config['general']['verbose'])
+        command_util.run_command("mvn test --no-transfer-progress", verbose=config['general']['verbose'])
     except subprocess.CalledProcessError as e:
         tkltest_status('Error executing tests: {}\n{}'.format(e, e.stderr), error=True)
         os.chdir(cur_dir)

@@ -1,8 +1,11 @@
 # ***************************************************************************
 # Copyright IBM Corporation 2021
 #
-# Licensed under the Eclipse Public License 2.0, Version 2.0 (the "License");
+# Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -49,6 +52,20 @@ def get_options_spec(command=None, subcommand=None, load_format=True):
     return spec
 
 
+def __is_using_dev_tests(config):
+    """
+    Checks if developers' tests are used.
+    This happens when compare_code_coverage or use_for_augmentation are True, or if coverage_threshold is specified.
+    Args:
+        config: the loaded configuration information.
+    Returns:
+        True is dev_tests are used in generation or execution.
+    """
+    return config['dev_tests']['compare_code_coverage'] or \
+           config['dev_tests']['use_for_augmentation'] or \
+           config['dev_tests']['coverage_threshold'] != __options_spec['dev_tests']['coverage_threshold']['default_value']
+
+
 def __conditionally_required(opt_name, config):
     """Checker for conditionally required options.
 
@@ -63,27 +80,33 @@ def __conditionally_required(opt_name, config):
         true if option is required in the context; false otherwise
     """
 
-    if opt_name in ['refactored_app_path_prefix', 'refactored_app_path_suffix']:  # pragma: no branch
-        if config['generate']['partitions_file'] != __options_spec['generate']['partitions_file']['default_value']:
-            return 'required if "partitions_file" is specified'
-    elif opt_name in ['app_classpath_file', 'monolith_app_path']:
-        # required if app_build_type is not specified
-        if config['generate']['app_build_type'] == __options_spec['generate']['app_build_type']['default_value']:
-            return 'required if "app_build_type" is not specified'
-    elif opt_name == 'app_build_type':
-        # required if app_classpath_file or monolith_app_path are not specified
+    if opt_name in ['app_classpath_file', 'monolith_app_path']:
+        # required if app_build_files is not specified
+        if config['generate']['app_build_files'] == __options_spec['generate']['app_build_files']['default_value']:
+            return 'required if "app_build_files" is not specified'
+    elif opt_name == 'app_build_files':
+        # required if app_classpath_file or monolith_app_path are not specified, or dev_tests are used
         if config['general']['app_classpath_file'] == __options_spec['general']['app_classpath_file']['default_value']:
             return 'required if "app_classpath_file" is not specified'
         if config['general']['monolith_app_path'] == __options_spec['general']['monolith_app_path']['default_value']:
             return 'required if "monolith_app_path" is not specified'
-    elif opt_name == 'app_build_files':
-        # required if app_build_type is specified
-        if config['generate']['app_build_type'] != __options_spec['generate']['app_build_type']['default_value']:
-            return 'required if "app_build_type" is specified'
-    elif opt_name == 'app_build_target':
-        # required if app_build_type is 'ant'
-        if config['generate']['app_build_type'] == 'ant':
-            return 'required if "app_build_type" is ant'
+        if __is_using_dev_tests(config):
+            return 'required if compare_code_coverage or use_for_augmentation are True, or if coverage_threshold is specified'
+    elif opt_name == 'app_build_ant_target':
+        # required if app_build_files is specified, and build_type is 'ant', and if app_classpath_file or monolith_app_path are not specified
+        if (config['generate']['app_build_files'] != __options_spec['generate']['app_build_files']['default_value'] and
+                config['general']['build_type'] == 'ant'):
+            if config['general']['app_classpath_file'] == __options_spec['general']['app_classpath_file']['default_value']:
+                return 'required if "app_build_files" is specified, and "build_type" is "ant", and "app_classpath_file" is not specified'
+            if config['general']['monolith_app_path'] == __options_spec['general']['monolith_app_path']['default_value']:
+                return 'required if "app_build_files" is specified, and "build_type" is "ant", and "monolith_app_path" is not specified'
+    elif opt_name == 'coverage_exec_file':
+        # required if compare_code_coverage or use_for_augmentation are True, or if coverage_threshold is specified
+        if __is_using_dev_tests(config):
+            return 'required if compare_code_coverage or use_for_augmentation are True, or if coverage_threshold is specified'
+    # elif opt_name in ['refactored_app_path_prefix', 'refactored_app_path_suffix']:  # pragma: no branch
+    #     if config['generate']['partitions_file'] != __options_spec['generate']['partitions_file']['default_value']:
+    #         return 'required if "partitions_file" is specified'
     return ''
 
 
@@ -141,7 +164,7 @@ __options_spec = {
             'type': list,
             'default_value': [],
             'relpath_fix_type': 'path',
-            'help_message': 'list of paths to application classes.Required only if app_build_files is not given.'
+            'help_message': 'list of paths to application classes. Required only if app_build_files is not given.'
         },
         'java_jdk_home': {
             'required': True,
@@ -213,9 +236,10 @@ __options_spec = {
             'short_name': '-bt',
             'long_name': '--build-type',
             'type': str,
-            'choices': ['ant', 'maven',  'gradle'],
-            'default_value': 'ant',
-            'help_message': 'build file type for compiling and running the tests: ant, maven, or gradle'
+            'choices': ['ant', 'maven', 'gradle'],
+            'default_value': 'maven',
+            'help_message': 'build file type for compiling and running the tests. '
+                            'In addition, if app_build_files are provided, this indicates their type'
         },
         'max_memory_for_coverage': {
             'required': False,
@@ -258,14 +282,6 @@ __options_spec = {
     'generate': {
         'is_cli_command': True,
         'help_message': 'Generate test cases on the application under test',
-        'jee_support': {
-            'required': False,
-            'is_toml_option': True,
-            'is_cli_option': False,
-            'type': bool,
-            'default_value': False,
-            'help_message': 'add support JEE mocking in generated tests cases'
-        },
         'no_diff_assertions': {
             'required': False,
             'is_toml_option': True,
@@ -275,17 +291,6 @@ __options_spec = {
             'type': bool,
             'default_value': False,
             'help_message': 'do not add assertions for differential testing to the generated tests'
-        },
-        'partitions_file': {
-            'required': False,
-            'is_toml_option': True,
-            'is_cli_option': True,
-            'short_name': '-pf',
-            'long_name': '--partitions-file',
-            'type': str,
-            'default_value': '',
-            'relpath_fix_type': 'path',
-            'help_message': 'path to file containing specification of partitions'
         },
         'target_class_list': {
             'required': False,
@@ -310,15 +315,6 @@ __options_spec = {
             'type': int,
             'default_value': 10,
             'help_message': 'time limit per class (in seconds) for evosuite/randoop test generation'
-        },
-        'app_build_type': {
-            'required': __conditionally_required,
-            'is_toml_option': True,
-            'is_cli_option': False,
-            'type': str,
-            'choices': ['gradle', 'ant', 'maven', ''],
-            'default_value': '',
-            'help_message': 'build type for collecting app dependencies: ant, maven, or gradle'
         },
         'app_build_files': {
             'required': __conditionally_required,
@@ -348,7 +344,7 @@ __options_spec = {
             'default_value': False,
             'help_message': 'Generate also bad path tests; assertions will validate that the exception observed during generation is thrown also during execution'
         },
-        'app_build_target': {
+        'app_build_ant_target': {
             'required': __conditionally_required,
             'is_toml_option': True,
             'is_cli_option': False,
@@ -356,6 +352,25 @@ __options_spec = {
             'default_value': '',
             'help_message': 'Name of the Ant target that is being used to build the app from the build file; required only for apps that use an Ant build file'
         },
+        # 'jee_support': {
+        #     'required': False,
+        #     'is_toml_option': True,
+        #     'is_cli_option': False,
+        #     'type': bool,
+        #     'default_value': False,
+        #     'help_message': 'add support JEE mocking in generated tests cases; currently this option is disabled'
+        # },
+        # 'partitions_file': {
+        #     'required': False,
+        #     'is_toml_option': True,
+        #     'is_cli_option': True,
+        #     'short_name': '-pf',
+        #     'long_name': '--partitions-file',
+        #     'type': str,
+        #     'default_value': '',
+        #     'relpath_fix_type': 'path',
+        #     'help_message': 'path to file containing specification of partitions'
+        # },
 
         # subcommands for the generate command
         'subcommands': {
@@ -409,26 +424,6 @@ __options_spec = {
                     'default_value': 10,
                     'help_message': 'number of executions to perform to determine pass/fail status of generated sequences'
                 },
-                'refactored_app_path_prefix': {
-                    # conditionally required: required if partitions_file is specified
-                    'required': __conditionally_required,
-                    'is_toml_option': True,
-                    'is_cli_option': False,
-                    'type': str,
-                    'default_value': '',
-                    'relpath_fix_type': 'path',
-                    'help_message': 'path prefix to root directory of refactored app version'
-                },
-                'refactored_app_path_suffix': {
-                    # conditionally required: required if partitions_file is specified
-                    'required': __conditionally_required,
-                    'is_toml_option': True,
-                    'is_cli_option': False,
-                    'type': list,
-                    'default_value': [],
-                    'relpath_fix_type': 'path',
-                    'help_message': 'list of paths to refactored app classes'
-                },
                 'reuse_base_tests': {
                     'required': False,
                     'is_toml_option': True,
@@ -439,6 +434,26 @@ __options_spec = {
                     'default_value': False,
                     'help_message': 'reuse existing base test cases'
                 },
+                # 'refactored_app_path_prefix': {
+                #     # conditionally required: required if partitions_file is specified
+                #     'required': __conditionally_required,
+                #     'is_toml_option': True,
+                #     'is_cli_option': False,
+                #     'type': str,
+                #     'default_value': '',
+                #     'relpath_fix_type': 'path',
+                #     'help_message': 'path prefix to root directory of refactored app version'
+                # },
+                # 'refactored_app_path_suffix': {
+                #     # conditionally required: required if partitions_file is specified
+                #     'required': __conditionally_required,
+                #     'is_toml_option': True,
+                #     'is_cli_option': False,
+                #     'type': list,
+                #     'default_value': [],
+                #     'relpath_fix_type': 'path',
+                #     'help_message': 'list of paths to refactored app classes'
+                # },
             },
 
             # "generate evosuite" command options
@@ -472,16 +487,21 @@ __options_spec = {
             'type': list,
             'default_value': [],
             'help_message': 'list of app packages; must end with a wildcard'
+                            '(to be used by JaCoCo so that it reports coverage of the app under test only,'
+                            'rather than also third party code)'
         },
-        'create_build_file': {
+        'no_create_build_file': {
             'required': False,
             'is_toml_option': True,
             'is_cli_option': True,
             'short_name': '-nbf',
             'long_name': '--no-build-file-creation',
             'type': bool,
-            'default_value': True,
-            'help_message': 'whether to generate build files; if set to false, a build file (of type set in build_type option) should already exist and will be used'
+            'default_value': False,
+            'help_message': 'whether to not create a build file; if set to False (default) a build file (of type set '
+                            'in build_type option) for running the tests with the matching configurations will be '
+                            'created and used; if set to True, a build file (of type set in build_type option) should '
+                            'already exist and will be used'
         },
         'code_coverage': {
             'required': False,
@@ -501,7 +521,8 @@ __options_spec = {
             'long_name': '--test-class',
             'type': str,
             'default_value': '',
-            'help_message': 'path to a test class file (.java) to compile and run'
+            'help_message': 'path to a test class file (.java) to compile and run; empty by default, '
+                            'in which case tests for all classes targeted during test generation are executed.'
         },
         'combine_modules_coverage_reports': {
             'required': False,
@@ -517,40 +538,26 @@ __options_spec = {
     'dev_tests': {
         'is_cli_command': False,
         'help_message': 'information about developer-written test suite',
-        'build_type': {
-            'required': True,
-            'is_toml_option': True,
-            'is_cli_option': False,
-            'type': str,
-            'choices': ['ant', 'maven', 'gradle'],
-            'default_value': 'ant',
-            'help_message': 'build type for compiling and running the developer-written test suite: ant, maven, or gradle'
-        },
-        'build_file': {
-            'required': True,
-            'is_toml_option': True,
-            'is_cli_option': False,
-            'type': str,
-            'default_value': '',
-            'relpath_fix_type': 'path',
-            'help_message': 'path to build file for compiling and running the developer-written test suite'
-        },
         'build_targets': {
-            'required': True,
-            'is_toml_option': True,
-            'is_cli_option': False,
-            'type': list,
-            'default_value': [],
-            'help_message': 'list of build targets for compiling and running the developer-written test suite'
-        },
-        'coverage_exec_file': {
             'required': False,
             'is_toml_option': True,
             'is_cli_option': False,
+            'type': list,
+            'default_value': ['test'],
+            'help_message': 'list of build targets for running the developer-written test suite and generating Jacoco '
+                            'coverage .exec file. If build_targets is not specified, then ["test"] will be used '
+                            '(resulting for example in the commands "mvn test" or "gradle test", which commonly '
+                            'are used to generate Jacoco coverage .exec file). '
+        },
+        'coverage_exec_file': {
+            'required': __conditionally_required,
+            'is_toml_option': True,
+            'is_cli_option': False,
             'type': str,
             'default_value': '',
             'relpath_fix_type': 'path',
-            'help_message': 'the path to the Jacoco coverage .exec file, generated by the developer-written build file'
+            'help_message': 'the path where the Jacoco coverage .exec file is generated by the developer-written '
+                            'build file.'
         },
         'compare_code_coverage': {
             'required': False,

@@ -1,8 +1,11 @@
 # ***************************************************************************
-# Copyright IBM Corporation 2022
+# Copyright IBM Corporation 2021
 #
-# Licensed under the Eclipse Public License 2.0, Version 2.0 (the "License");
+# Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,19 +19,19 @@ import os.path
 import re
 import subprocess
 import sys
-import urllib.parse
-from tqdm import trange
 import time
+import urllib.parse
+from importlib import resources
 from threading import Thread
 
-import glob
 import toml
+from tqdm import trange
 
-from tkltest.util.logging_util import tkltest_status
+from tkltest.generate.ui import generate_selenium
 from tkltest.util import command_util
 from tkltest.util.constants import *
+from tkltest.util.logging_util import tkltest_status
 from tkltest.util.ui import dir_util, browser_util
-from tkltest.generate.ui import generate_selenium
 
 
 def process_generate_command(config):
@@ -70,24 +73,12 @@ def process_generate_command(config):
         tkltest_status('Generated {} Selenium API test cases; written to test class file "{}"'
                        .format(test_count, test_class_file))
     except Exception as e:
-        tkltest_status('Execption occurred while creating Selenium API tests: {}'.format(str(e)), error=True)
+        tkltest_status('Exception occurred while creating Selenium API tests: {}'.format(str(e)), error=True)
         browser_util.cleanup_browser_instances(browser)
         sys.exit(1)
 
     # cleanup browser instances
     browser_util.cleanup_browser_instances(browser)
-
-
-def __generate_selenium_tests(config, output_crawl_dir):
-    tkltest_status('Creating Selenium API test cases')
-    try:
-        generate_selenium.generate_selenium_api_tests(config=config, crawl_dir=output_crawl_dir)
-        test_class_file = os.path.join(output_crawl_dir, SELENIUM_API_TEST_FILE)
-    except Exception as e:
-        tkltest_status('Execption occurred while creating Selenium API tests: {}'.format(e), error=True)
-        browser_util.cleanup_browser_instances(browser)
-        sys.exit(1)
-
 
 def __run_crawljax(config):
     app_name = config['general']['app_name']
@@ -103,8 +94,8 @@ def __run_crawljax(config):
 
     # create java command for running crawljax runner
     uitestgen_command = 'java -Xmx2048m -cp '
-    uitestgen_command += TKLTEST_UI_CORE_JAR + os.pathsep + CRAWLJAX_JAR
-    uitestgen_command += os.pathsep + COMMONS_CLI_JAR + os.pathsep + TOML_JAR + os.pathsep + ANTLR_JAR
+    with resources.path('tkltest-lib', TKLTEST_UI_CORE_JAR) as core_ui_jar:
+        uitestgen_command += str(core_ui_jar)
     uitestgen_command += ' org.konveyor.tackletest.ui.crawljax.CrawljaxRunner -cf {}'.format(config_file_name)
 
     # if verbose option specified, redirect crawljax log to file
@@ -169,3 +160,23 @@ def __get_generated_test_count(test_class_file):
     with open(test_class_file, 'r') as f:
         teststr = f.read()
     return len(re.findall('@Test', teststr))
+
+if __name__ == '__main__':  # pragma: no cover
+    app_config = {
+        'general': {
+            'log-level': 'WARNING',
+            'app_name': 'petclinic',
+            'app_url': 'http://localhost:8080',
+            # 'app_name': 'addressbook',
+            # 'app_url': 'http://localhost:3000/addressbook/',
+            'test_directory': '',
+            'verbose': False
+        },
+        'generate': {
+            'browser': 'chrome_headless',
+            'wait_after_event': 500,
+            'wait_after_reload': 500,
+            'time_limit': 2
+        }
+    }
+    process_generate_command(app_config)

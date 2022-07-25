@@ -1,8 +1,11 @@
 # ***************************************************************************
 # Copyright IBM Corporation 2021
 #
-# Licensed under the Eclipse Public License 2.0, Version 2.0 (the "License");
+# Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -27,7 +30,7 @@ from tkltest.generate.unit import generate, augment
 class UnitTests(unittest.TestCase):
 
     # dict with apps parameters for test
-    # app_build_type, app_build_files are determined by the toml
+    # build_type, app_build_files are determined by the toml
     maven_test_apps = {
         '14_spark': {
             'standard_classpath': os.path.join('test', 'data', '14_spark', '14_sparkMonoClasspath.txt'),
@@ -44,6 +47,7 @@ class UnitTests(unittest.TestCase):
             'config_file': os.path.join('test', 'data', 'windup-sample', 'tkltest_config_web.toml'),
             'build_file_if_requires_build': os.path.join('test', 'data', 'windup-sample', 'migration-sample-app-master',
                                                          'pom.xml'),
+            'ctd_tests': os.path.join('test', 'data', 'windup-sample', 'windup-sample-web-ctd-amplified-tests')
         }
     }
 
@@ -79,6 +83,8 @@ class UnitTests(unittest.TestCase):
         'splitNjoin': {
             'standard_classpath': os.path.join('test', 'data', 'splitNjoin', 'splitNjoinMonoClasspath.txt'),
             'config_file': os.path.join('test', 'data', 'splitNjoin', 'tkltest_config.toml'),
+            'ctd_tests': os.path.join('test', 'data', 'splitNjoin', 'splitNjoin-ctd-amplified-tests'),
+            'build_file_without_tests': os.path.join('test', 'data', 'splitNjoin', 'app', 'build_without_tests.gradle')
         },
     }
 
@@ -100,14 +106,14 @@ class UnitTests(unittest.TestCase):
             dir_util.cd_cli_dir()
 
             config = config_util.load_config(config_file=ant_test_apps[app_name]['config_file'])
-            config['generate']['app_build_type'] = 'ant'
+            config['general']['build_type'] = 'ant'
             config['generate']['app_build_settings_files'] = [ant_test_apps[app_name]['property_file']]
             config['generate']['app_build_files'] = [ant_test_apps[app_name]['build_file']]
             standard_classpath = os.path.abspath(ant_test_apps[app_name]['standard_classpath'])
 
             # every target is a different test case and is being compared to the standard classpath
             for target_name in ant_test_apps[app_name]['targets_to_test_dependencies']:
-                config['generate']['app_build_target'] = target_name
+                config['generate']['app_build_ant_target'] = target_name
                 config['general']['app_classpath_file'] = ''
                 config_util.resolve_classpath(config, 'generate')
 
@@ -129,7 +135,7 @@ class UnitTests(unittest.TestCase):
             failed_assertion_message = 'failed for app = ' + app_name
 
             config = config_util.load_config(config_file=ant_test_apps[app_name]['config_file'])
-            config['generate']['app_build_type'] = 'ant'
+            config['general']['build_type'] = 'ant'
             config['generate']['app_build_settings_files'] = [ant_test_apps[app_name]['property_file']]
             config['generate']['app_build_files'] = [ant_test_apps[app_name]['build_file']]
             monolith_app_path = config['general']['monolith_app_path']
@@ -139,7 +145,7 @@ class UnitTests(unittest.TestCase):
             monolith_app_path[0] = os.path.join(constants.TKLTEST_CLI_DIR, monolith_app_path[0])
             # every target is a different test case
             for target_name in ant_test_apps[app_name]['targets_to_test_app_path']:
-                config['generate']['app_build_target'] = target_name
+                config['generate']['app_build_ant_target'] = target_name
                 config['general']['monolith_app_path'] = []
                 config_util.resolve_app_path(config)
 
@@ -222,13 +228,109 @@ class UnitTests(unittest.TestCase):
         pom_file2 = os.path.join('test', 'data', 'windup-sample', 'migration-sample-app-master', 'simple-sample-web', 'pom.xml')
         config['generate']['app_build_files'] = [pom_file1, pom_file2]
         config['generate']['app_build_settings_files'] = ['', '']
-        config['generate']['app_build_type'] = 'maven'
+        config['general']['build_type'] = 'maven'
 
         modules_names = ['proprietary-stub',
                          'simple-sample-weblogic-services',
                          'simple-sample-weblogic-web']
         modules = config_util.get_modules_properties(config)
         self.__assert_modules_properties(modules_names, modules)
+        self.__assert_no_artifact_at_cli([app_name])
+
+    def test_integrate_tests_into_maven_app_build_file(self) -> None:
+        """Test integrating tests into the maven app build file()"""
+        dir_util.cd_cli_dir()
+        app_name = 'windup-sample-web'
+        test_app = self.maven_test_apps[app_name]
+        config = config_util.load_config(config_file=test_app['config_file'])
+        modules = config_util.get_modules_properties(config)
+        ctd_tests = [test_app['ctd_tests']]
+        #compile the app:
+        build_command = 'mvn clean install -f ' + test_app['build_file_if_requires_build']
+        command_util.run_command(command=build_command, verbose=config['general']['verbose'])
+
+
+        # call integrate_tests_into_app_build_file(), check that new pom is created:
+        pom_file = config['generate']['app_build_files'][0]
+        build_util.integrate_tests_into_app_build_file([pom_file], 'maven', ctd_tests)
+        integrated_pom_file_name = 'tkltest_app_' + os.path.basename(pom_file)
+        self.assertTrue(os.path.isfile(integrated_pom_file_name))
+        integrated_pom_file = os.path.join(os.path.dirname(pom_file), integrated_pom_file_name)
+        shutil.move(integrated_pom_file_name, integrated_pom_file)
+
+        surefire_dir = os.path.join(os.path.dirname(pom_file), 'target', 'surefire-reports')
+        shutil.rmtree(surefire_dir, ignore_errors=True)
+        # run tests the new pom file:
+        run_tests_command = 'mvn -f ' + integrated_pom_file + ' clean test'
+        command_util.run_command(command=run_tests_command, verbose=False)
+
+        # check that there are reports, and no fails:
+        self.assertTrue(os.path.isdir(surefire_dir))
+        result_files = list(Path(surefire_dir).glob('**/*.txt'))
+        self.assertTrue(result_files)
+
+        line_part_ok = 'Failures: 0, Errors: 0, Skipped: 0'
+        for result_file in result_files:
+            with open(result_file) as f:
+                lines = f.readlines()
+                self.assertTrue([line for line in lines if line_part_ok in line])
+        os.remove(integrated_pom_file)
+        self.__assert_no_artifact_at_cli([app_name])
+
+    def test_integrate_tests_into_gradle_app_build_file(self) -> None:
+        """Test integrating tests into the gradle app build file()"""
+        dir_util.cd_cli_dir()
+        app_name = 'splitNjoin'
+        test_app = self.gradle_test_apps[app_name]
+        config = config_util.load_config(config_file=test_app['config_file'])
+        ctd_tests = test_app['ctd_tests']
+        app_dir = os.path.dirname(test_app['config_file'])
+        # we must override build.gradle, so we use a local copy of the app :
+        local_app_dir = os.path.basename(app_dir)
+        shutil.rmtree(local_app_dir, ignore_errors=True)
+        shutil.copytree(app_dir, local_app_dir)
+
+        # call integrate_tests_into_app_build_file(), check that new .gradle is created:
+        gradle_file = test_app['build_file_without_tests']
+        local_gradle_file = os.path.relpath(gradle_file, os.path.dirname(app_dir))
+        local_gradle_new_filename = os.path.join(os.path.dirname(local_gradle_file), 'build.gradle')
+        shutil.move(local_gradle_file, local_gradle_new_filename)
+        local_gradle_file = local_gradle_new_filename
+        build_util.integrate_tests_into_app_build_file([local_gradle_file], 'gradle', [ctd_tests])
+        integrated_gradle_file_name = 'tkltest_app_' + os.path.basename(local_gradle_file)
+        self.assertTrue(os.path.isfile(integrated_gradle_file_name))
+        shutil.move(integrated_gradle_file_name, local_gradle_file)
+
+        # delete tests artifacts
+        test_class_dir = os.path.join(os.path.dirname(local_gradle_file), 'build', 'classes', 'java', 'test')
+        report_dir = os.path.join(os.path.dirname(local_gradle_file), 'build', 'reports')
+        shutil.rmtree(test_class_dir, ignore_errors=True)
+        shutil.rmtree(report_dir, ignore_errors=True)
+
+        # run tests:
+        run_tests_command = 'gradle -i -b ' + local_gradle_file + ' clean test'
+        command_util.run_command(command=run_tests_command, verbose=True)
+
+        # check that there are .class files, reports, and no fails:
+        self.assertTrue(os.path.isdir(test_class_dir))
+        class_files = list(Path(test_class_dir).glob('**/*.class'))
+        java_files = list(Path(ctd_tests).glob('**/*.java'))
+        self.assertTrue(class_files)
+        self.assertTrue(len(class_files) == len(java_files))
+        class_files_basenames = set([os.path.basename(f).replace('.class', '') for f in class_files])
+        java_files_basenames = set([os.path.basename(f).replace('.java', '') for f in java_files])
+        self.assertTrue(class_files_basenames == java_files_basenames)
+
+        self.assertTrue(os.path.isdir(report_dir))
+        html_file = os.path.join(report_dir, 'tests', 'test', 'index.html')
+        self.assertTrue(os.path.isfile(html_file))
+        # got 100% for each class + overall -> total 3:
+        with open(html_file) as f:
+            success_lines = [l for l in f.readlines() if l.startswith('<td class="success">100%</td>')]
+            self.assertTrue(len(success_lines) == 3)
+
+        shutil.rmtree(local_app_dir)
+
         self.__assert_no_artifact_at_cli([app_name])
 
     def test_getting_modules_gradle(self) -> None:
@@ -246,7 +348,7 @@ class UnitTests(unittest.TestCase):
         settings_file = os.path.join('test', 'data', 'splitNjoin', 'settings.gradle')
         config['generate']['app_build_files'] = [build_file1, build_file2]
         config['generate']['app_build_settings_files'] = [settings_file, settings_file]
-        config['generate']['app_build_type'] = 'gradle'
+        config['general']['build_type'] = 'gradle'
 
         modules_names = ['app',
                          'list',
@@ -268,7 +370,7 @@ class UnitTests(unittest.TestCase):
         build_file_list = os.path.join('test', 'data', 'splitNjoin', 'list', 'build.gradle')
         build_file_app = os.path.join('test', 'data', 'splitNjoin', 'app', 'build.gradle')
         settings_file = os.path.join('test', 'data', 'splitNjoin', 'settings.gradle')
-        base_config['generate']['app_build_type'] = 'gradle'
+        base_config['general']['build_type'] = 'gradle'
         base_config['general']['test_directory'] = 'SNJ_test_dir'
         base_config['general']['reports_path'] = 'SNJ_report_dir'
 
@@ -380,7 +482,7 @@ class UnitTests(unittest.TestCase):
     def test_getting_dependencies_gradle(self) -> None:
         """Test getting dependencies using gradle build file"""
         # dict with apps parameters for test
-        # app_build_type, app_build_files, app_build_settings_file are determined by the toml
+        # build_type, app_build_files, app_build_settings_file are determined by the toml
         for app_name in self.gradle_test_apps.keys():
             dir_util.cd_cli_dir()
 
@@ -437,13 +539,14 @@ class UnitTests(unittest.TestCase):
         shutil.rmtree(config['general']['test_directory'], ignore_errors=True)
         os.makedirs(config['general']['test_directory'])
         monolithic_dir = os.path.join(config['general']['test_directory'], 'monolithic')
-        ant_build_file, maven_build_file, gradle_build_file = build_util.generate_build_xml(
+        build_file = build_util.generate_build_xml(
             app_name=app_name,
+            build_type='gradle',
             monolith_app_path=config['general']['monolith_app_path'],
             app_classpath=build_util.get_build_classpath(config),
             test_root_dir=config['general']['test_directory'],
             test_dirs=[monolithic_dir],
-            partitions_file=None,
+            # partitions_file=None,
             target_class_list=[],
             main_reports_dir=config['general']['reports_path'],
             app_packages=[],  # for coverage-based augmentation
@@ -458,7 +561,7 @@ class UnitTests(unittest.TestCase):
             shutil.rmtree(monolithic_dir, ignore_errors=True)
             os.makedirs(monolithic_dir)
             shutil.rmtree(config['general']['reports_path'], ignore_errors=True)
-            augment.augment_with_code_coverage(config, gradle_build_file,
+            augment.augment_with_code_coverage(config, build_file,
                                                config['general']['build_type'],
                                                config['general']['test_directory'],
                                                config['general']['reports_path'])
@@ -488,7 +591,7 @@ class UnitTests(unittest.TestCase):
             lines_generated = file.read().splitlines()
         lines_generated = [PurePath(line).as_posix() for line in lines_generated]
 
-        self.assertTrue(len(lines_generated) == len(lines_standard), message)
+        self.assertEqual(len(lines_generated), len(lines_standard), message)
 
         for i, jar_path in enumerate(lines_generated):
             extended_message = message + " , path = " + jar_path

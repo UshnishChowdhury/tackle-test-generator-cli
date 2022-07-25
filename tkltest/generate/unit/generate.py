@@ -1,8 +1,11 @@
 # ***************************************************************************
 # Copyright IBM Corporation 2021
 #
-# Licensed under the Eclipse Public License 2.0, Version 2.0 (the "License");
+# Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -87,15 +90,16 @@ def generate_ctd_amplified_tests(config, output_dir):
 
     # get relevant configuration options for test generation
     app_name = config['general']['app_name']
+    build_type = config['general']['build_type']
     monolith_app_path = config['general']['monolith_app_path']
     app_classpath_file = config['general']['app_classpath_file']
     verbose = config['general']['verbose']
-    app_prefix = config['generate']['ctd_amplified']['refactored_app_path_prefix']
-    app_suffix = config['generate']['ctd_amplified']['refactored_app_path_suffix']
+    # app_prefix = config['generate']['ctd_amplified']['refactored_app_path_prefix']
+    # app_suffix = config['generate']['ctd_amplified']['refactored_app_path_suffix']
 
-    partitions_file = None
-    if config['generate']['partitions_file']:
-        partitions_file = config['generate']['partitions_file']
+    # partitions_file = None
+    # if config['generate']['partitions_file']:
+    #     partitions_file = config['generate']['partitions_file']
 
     target_class_list = []
     if config['generate']['target_class_list']:
@@ -110,8 +114,11 @@ def generate_ctd_amplified_tests(config, output_dir):
     start_time = time.time()
 
     # generate CTD models and test plans
-    generate_CTD_models_and_test_plans(app_name, partitions_file, target_class_list, excluded_class_list,
-                                       monolith_app_path, app_classpath_file, app_prefix, app_suffix,
+    generate_CTD_models_and_test_plans(app_name,
+                                       # partitions_file,
+                                       target_class_list, excluded_class_list,
+                                       monolith_app_path, app_classpath_file,
+                                       # app_prefix, app_suffix,
                                        config['generate']['ctd_amplified']['interaction_level'], jdk_path, verbose)
 
     tkltest_status("Computing test plans with CTD took "+str(round(time.time()-start_time,2))+" seconds")
@@ -138,7 +145,9 @@ def generate_ctd_amplified_tests(config, output_dir):
         tkltest_status("Reusing existing basic block test sequences")
     else:
         run_bb_test_generator(app_name, ctd_file, monolith_app_path, app_classpath_file,
-                          test_generator_name, time_limit, jdk_path, partitions_file, verbose)
+                              test_generator_name, time_limit, jdk_path,
+                              # partitions_file,
+                              verbose)
         tkltest_status("Generating basic block test sequences with "+test_generator_name+" took " +
             str(round(time.time() - start_time, 2)) + " seconds")
 
@@ -164,15 +173,15 @@ def generate_ctd_amplified_tests(config, output_dir):
                      no_diff_assertions=config['generate']['no_diff_assertions'],
                      no_ctd_coverage=config['generate']['ctd_amplified']['no_ctd_coverage'],
                      interaction_level=config['generate']['ctd_amplified']['interaction_level'],
-                     jee_support=config['generate']['jee_support'],
+                     # jee_support=config['generate']['jee_support'],
                      bad_path=config['generate']['bad_path'],
                      num_executions=config['generate']['ctd_amplified']['num_seq_executions'],
                      test_directory=tmp_test_directory, verbose=verbose)
 
     if os.path.exists(test_directory):
         shutil.rmtree(test_directory)
-    os.rename(tmp_test_directory, test_directory)
-
+    shutil.move(tmp_test_directory, test_directory)
+    tkltest_status("JUnit tests are saved in " + os.path.abspath(test_directory))
     tkltest_status("Extending test sequences and writing junit tests took " +
                  str(round(time.time() - start_time, 2)) + " seconds")
 
@@ -202,7 +211,8 @@ def generate_ctd_amplified_tests(config, output_dir):
     # we create this directory, so it will be at the build files, and will be later used for augmentation
     if not os.path.isdir(os.path.join(test_directory, 'monolithic')):
         os.mkdir(os.path.join(test_directory, 'monolithic'))
-    # generate ant build file
+
+    # generate a build file
     test_dirs = [
         os.path.join(test_directory, dir) for dir in os.listdir(test_directory)
         if os.path.isdir(os.path.join(test_directory, dir)) and not dir.startswith('.')
@@ -213,13 +223,14 @@ def generate_ctd_amplified_tests(config, output_dir):
     else:
         reports_dir = app_name+constants.TKLTEST_MAIN_REPORT_DIR_SUFFIX
 
-    ant_build_file, maven_build_file, gradle_build_file = build_util.generate_build_xml(
+    build_file = build_util.generate_build_xml(
         app_name=app_name,
+        build_type=build_type,
         monolith_app_path=monolith_app_path,
         app_classpath=build_util.get_build_classpath(config),
         test_root_dir=test_directory,
         test_dirs=test_dirs,
-        partitions_file=partitions_file,
+        # partitions_file=partitions_file,
         target_class_list=target_class_list,
         main_reports_dir=reports_dir,
         app_packages=config['execute']['app_packages'],  # for coverage-based augmentation
@@ -227,21 +238,12 @@ def generate_ctd_amplified_tests(config, output_dir):
         offline_instrumentation=True if not config['generate']['ctd_amplified']['no_augment_coverage'] else False,
         output_dir=output_dir
     )
-    tkltest_status('Generated Ant build file {}'.format(os.path.abspath(os.path.join(test_directory, ant_build_file))))
-    tkltest_status('Generated Maven build file {}'.format(os.path.abspath(os.path.join(test_directory, maven_build_file))))
-    tkltest_status('Generated Gradle build file {}'.format(os.path.abspath(os.path.join(test_directory, gradle_build_file))))
+    tkltest_status('Generated {} build file {}'.format(build_type, os.path.abspath(os.path.join(test_directory, build_file))))
 
     # augment CTD-guided tests with coverage-increasing base tests
     if not config['generate']['ctd_amplified']['no_augment_coverage']:
         config['general']['offline_instrumentation'] = True
-        build_type = config['general']['build_type']
         start_time = time.time()
-        if build_type == 'ant':
-            build_file = ant_build_file
-        elif build_type == 'maven':
-            build_file = maven_build_file
-        else:
-            build_file = gradle_build_file
         has_coverage = augment_with_code_coverage(config=config, build_file=build_file, build_type=build_type,
                                    ctd_test_dir=test_directory, report_dir=reports_dir)
         if not has_coverage:
@@ -250,11 +252,12 @@ def generate_ctd_amplified_tests(config, output_dir):
             tkltest_status('Re-running Coverage-driven test-suite augmentation with online instrumentation')
             build_util.generate_build_xml(
                 app_name=app_name,
+                build_type=build_type,
                 monolith_app_path=monolith_app_path,
                 app_classpath=build_util.get_build_classpath(config),
                 test_root_dir=test_directory,
                 test_dirs=test_dirs,
-                partitions_file=partitions_file,
+                # partitions_file=partitions_file,
                 target_class_list=target_class_list,
                 main_reports_dir=reports_dir,
                 app_packages=config['execute']['app_packages'],  # for coverage-based augmentation
@@ -267,11 +270,16 @@ def generate_ctd_amplified_tests(config, output_dir):
                                        ctd_test_dir=test_directory, report_dir=reports_dir)
         tkltest_status('Coverage-driven test-suite augmentation and optimization took {} seconds'.
                        format(round(time.time() - start_time, 2)))
+    build_util.integrate_tests_into_app_build_file(config['generate']['app_build_files'],
+                                                   config['general']['build_type'],
+                                                   test_dirs)
 
 
-def generate_CTD_models_and_test_plans(app_name, partitions_file, target_class_list, excluded_class_list,
-                                       monolith_app_path, app_classpath_file,
-                                       app_prefix, app_suffix, interaction_level, jdk_path, verbose=False):
+def generate_CTD_models_and_test_plans(app_name,
+                                       # partitions_file,
+                                       target_class_list, excluded_class_list, monolith_app_path, app_classpath_file,
+                                       # app_prefix, app_suffix,
+                                       interaction_level, jdk_path, verbose=False):
     """Generates CTD models and test plans.
 
     Performs the first step in the generation of CTD-guided tests (generation of CTD models and test plans)
@@ -281,14 +289,14 @@ def generate_CTD_models_and_test_plans(app_name, partitions_file, target_class_l
 
     Args:
         app_name (str): name of the app
-        partitions_file (str): name of file containing information about app partitions (if the modernization task
+        # partitions_file (str): name of file containing information about app partitions (if the modernization task
             involves partitioning the legacy app)
         target_class_list (list): name of specific classes or packages targeted for test generation
         excluded_class_list (list): names of classes or packages to omit from the set of test targets
         monolith_app_path (list): paths to directories containing classes of the legacy app
         app_classpath_file (str): name of file containing library dependencies of app
-        app_prefix (str): path prefix to root directory of refactored app version
-        app_suffix (list): list of paths to refactored app classes
+        # app_prefix (str): path prefix to root directory of refactored app version
+        # app_suffix (list): list of paths to refactored app classes
         interaction_level (int): CTD interaction level (strength) for test-plan generation
         jdk_path (str): path to Java VM
         verbose (bool): run in verbose mode printing detailed status messages
@@ -312,24 +320,25 @@ def generate_CTD_models_and_test_plans(app_name, partitions_file, target_class_l
     modeling_command += os.path.join(constants.TKLTEST_LIB_DOWNLOAD_DIR, "heros-1.2.0.jar") + os.pathsep
     modeling_command += os.path.join(constants.TKLTEST_LIB_DOWNLOAD_DIR, "httpcore-4.4.6.jar") + os.pathsep
     modeling_command += os.path.join(constants.TKLTEST_LIB_DOWNLOAD_DIR, "httpclient-4.5.13.jar") + os.pathsep
-    modeling_command += os.path.join(constants.TKLTEST_LIB_DOWNLOAD_DIR, "jackson-databind-2.12.5.jar") + os.pathsep
-    modeling_command += os.path.join(constants.TKLTEST_LIB_DOWNLOAD_DIR, "jackson-core-2.12.5.jar") + os.pathsep
-    modeling_command += os.path.join(constants.TKLTEST_LIB_DOWNLOAD_DIR, "jackson-annotations-2.12.5.jar")
+    modeling_command += os.path.join(constants.TKLTEST_LIB_DOWNLOAD_DIR, "jackson-databind-2.12.6.1.jar") + os.pathsep
+    modeling_command += os.path.join(constants.TKLTEST_LIB_DOWNLOAD_DIR, "jackson-core-2.12.6.jar") + os.pathsep
+    modeling_command += os.path.join(constants.TKLTEST_LIB_DOWNLOAD_DIR, "jackson-annotations-2.12.6.jar")
     modeling_command += " org.konveyor.tackle.testgen.model.CTDTestPlanGenerator "
     modeling_command += " -app "+app_name
-    if partitions_file:
-        modeling_command += " -pf "+partitions_file
-    elif target_class_list:
+    # if partitions_file:
+    #     modeling_command += " -pf "+partitions_file
+    # elif
+    if target_class_list:
         modeling_command += " -cl " + '::'.join(target_class_list)
 
     if excluded_class_list:
         modeling_command += " -el " + '::'.join(excluded_class_list)
     modeling_command += " -pt " + os.pathsep.join(monolith_app_path)
     modeling_command += " -clpt " + app_classpath_file
-    if app_prefix:
-        modeling_command += " -pp " + app_prefix
-    if app_suffix:
-        modeling_command += " -ps " + os.pathsep.join(app_suffix)
+    # if app_prefix:
+    #     modeling_command += " -pp " + app_prefix
+    # if app_suffix:
+    #     modeling_command += " -ps " + os.pathsep.join(app_suffix)
     modeling_command += " -ic " + str(interaction_level)
 
     logging.info(modeling_command)
@@ -342,7 +351,9 @@ def generate_CTD_models_and_test_plans(app_name, partitions_file, target_class_l
 
 
 def run_bb_test_generator(app_name, ctd_file, monolith_app_path, app_classpath_file, test_generator_name,
-                          time_limit, jdk_path, partitions_file, verbose=False):
+                          time_limit, jdk_path,
+                          # partitions_file,
+                          verbose=False):
     """Generates building-block test sequences.
 
     Generates building-block tests sequences using evosuite, randoop, or both tools in combination. Performs
@@ -362,11 +373,9 @@ def run_bb_test_generator(app_name, ctd_file, monolith_app_path, app_classpath_f
 
     # build the java command to be executed
     tg_command = "\""+jdk_path+"\" -Xmx2048m -cp " + os.path.join(constants.TKLTEST_UNIT_CORE_JAR)+os.pathsep
-    tg_command += os.path.join(constants.TKLTEST_LIB_DOWNLOAD_DIR, "randoop-all-"+constants.RANDOOP_VERSION+".jar") + os.pathsep
-    tg_command += os.path.join(constants.TKLTEST_LIB_DOWNLOAD_DIR, "evosuite-standalone-runtime-"
-                               +constants.EVOSUITE_VERSION+".jar") + os.pathsep
-    tg_command += os.path.join(constants.TKLTEST_LIB_DOWNLOAD_DIR, "evosuite-master-"
-                               +constants.EVOSUITE_VERSION+".jar") + os.pathsep
+    tg_command += os.path.join(constants.TKLTEST_LIB_DOWNLOAD_DIR, "randoop-"+constants.RANDOOP_VERSION+".jar") + os.pathsep
+    tg_command += os.path.join(constants.TKLTEST_LIB_DOWNLOAD_DIR, "evosuite-standalone-runtime-"+constants.EVOSUITE_VERSION+".jar") + os.pathsep
+    tg_command += os.path.join(constants.TKLTEST_LIB_DOWNLOAD_DIR, "evosuite-master-"+constants.EVOSUITE_VERSION+".jar") + os.pathsep
     tg_command += os.path.join(constants.TKLTEST_LIB_DOWNLOAD_DIR, "commons-cli-1.4.jar") + os.pathsep
     tg_command += os.path.join(constants.TKLTEST_LIB_DOWNLOAD_DIR, "soot-4.1.0.jar") + os.pathsep
     tg_command += os.path.join(constants.TKLTEST_LIB_DOWNLOAD_DIR, "commons-io-2.6.jar") + os.pathsep
@@ -374,9 +383,9 @@ def run_bb_test_generator(app_name, ctd_file, monolith_app_path, app_classpath_f
     tg_command += os.path.join(constants.TKLTEST_LIB_DOWNLOAD_DIR, "javaparser-symbol-solver-core-3.16.1.jar") + os.pathsep
     tg_command += os.path.join(constants.TKLTEST_LIB_DOWNLOAD_DIR, "guava-29.0-jre.jar") + os.pathsep
     tg_command += os.path.join(constants.TKLTEST_LIB_DOWNLOAD_DIR, "failureaccess-1.0.1.jar") + os.pathsep
-    tg_command += os.path.join(constants.TKLTEST_LIB_DOWNLOAD_DIR, "jackson-databind-2.12.5.jar") + os.pathsep
-    tg_command += os.path.join(constants.TKLTEST_LIB_DOWNLOAD_DIR, "jackson-core-2.12.5.jar") + os.pathsep
-    tg_command += os.path.join(constants.TKLTEST_LIB_DOWNLOAD_DIR, "jackson-annotations-2.12.5.jar")
+    tg_command += os.path.join(constants.TKLTEST_LIB_DOWNLOAD_DIR, "jackson-databind-2.12.6.1.jar") + os.pathsep
+    tg_command += os.path.join(constants.TKLTEST_LIB_DOWNLOAD_DIR, "jackson-core-2.12.6.jar") + os.pathsep
+    tg_command += os.path.join(constants.TKLTEST_LIB_DOWNLOAD_DIR, "jackson-annotations-2.12.6.jar")
     tg_command += " org.konveyor.tackle.testgen.core.TestSequenceInitializer"
     tg_command += " -app " + app_name
     tg_command += " -tp " + ctd_file
@@ -384,9 +393,13 @@ def run_bb_test_generator(app_name, ctd_file, monolith_app_path, app_classpath_f
     tg_command += " -clpt " + app_classpath_file
     tg_command += " -tg " + test_generator_name
     tg_command += " -tl " + str(time_limit)
+    jdk_home = os.path.split(os.path.split(jdk_path)[0])[0]
+    if jdk_home:
+        # add double quotes for the case of spaces in the jdk path
+        tg_command += " -jdk \"" + jdk_home + "\""
 
-    if partitions_file:
-        tg_command += " -tm"
+    # if partitions_file:
+    #     tg_command += " -tm"
 
     # for verbose option, redirect evosuite and randoop stdout and stderr to files
     if verbose:
@@ -408,8 +421,9 @@ def run_bb_test_generator(app_name, ctd_file, monolith_app_path, app_classpath_f
 
 
 def extend_sequences(app_name, monolith_app_path, app_classpath_file, ctd_file, bb_seq_file, jdk_path,
-                     no_diff_assertions, no_ctd_coverage, interaction_level, jee_support, bad_path, num_executions,
-                     test_directory, verbose=False):
+                     no_diff_assertions, no_ctd_coverage, interaction_level,
+                     # jee_support,
+                     bad_path, num_executions, test_directory, verbose=False):
     """Generates the final CTD-guided test cases.
 
     Generates extended test sequences for covering the CTD test plan rows that are written as JUnit
@@ -423,7 +437,7 @@ def extend_sequences(app_name, monolith_app_path, app_classpath_file, ctd_file, 
         bb_seq_file (str): name of JSON file containing building-block test sequences
         jdk_path (str): path to Java VM
         no_diff_assertions (bool): do not add assertions for differential testing to the generated tests
-        jee_support (bool): add support JEE mocking in generated tests cases
+        # jee_support (bool): add support JEE mocking in generated tests cases
         bad_path (bool): whether to enerate bad path tests cases
         num_executions (int): number of executions to perform to determine pass/fail status of generated sequences
         test_directory (str): name of root test directory to write JUnit test classes to
@@ -432,19 +446,19 @@ def extend_sequences(app_name, monolith_app_path, app_classpath_file, ctd_file, 
     tkltest_status('Extending sequences to reach coverage goals and generating junit tests')
 
     te_command = "\"" + jdk_path + "\""
-    te_command += " -Xmx2048m -Xbootclasspath/a:"+constants.TKLTEST_LIB_DOWNLOAD_DIR+os.sep+"replacecall-"+constants.RANDOOP_VERSION+\
-                  ".jar -javaagent:"+constants.TKLTEST_LIB_DOWNLOAD_DIR+os.sep+"replacecall-"+constants.RANDOOP_VERSION+".jar"
+    te_command += " -Xmx2048m -Xbootclasspath/a:"+constants.TKLTEST_LIB_DOWNLOAD_DIR+os.sep+"replacecall-"+constants.RANDOOP_REPLACECALL_VERSION+\
+                  ".jar -javaagent:"+constants.TKLTEST_LIB_DOWNLOAD_DIR+os.sep+"replacecall-"+constants.RANDOOP_REPLACECALL_VERSION+".jar"
     te_command += " -cp \"" + os.path.join(constants.TKLTEST_UNIT_CORE_JAR) + os.pathsep
-    te_command += os.path.join(constants.TKLTEST_LIB_DOWNLOAD_DIR, "randoop-all-"+constants.RANDOOP_VERSION+".jar") + os.pathsep
+    te_command += os.path.join(constants.TKLTEST_LIB_DOWNLOAD_DIR, "randoop-"+constants.RANDOOP_VERSION+".jar") + os.pathsep
     te_command += os.path.abspath(app_name+constants.TKL_EVOSUITE_OUTDIR_SUFFIX) + os.pathsep
-    if jee_support:
-        te_command += os.path.join(constants.TKLTEST_LIB_DIR,
-                                   "evosuite-standalone-runtime-"+constants.EVOSUITE_VERSION+"-SNAPSHOT.jar") + os.pathsep
-        te_command += os.path.join(constants.TKLTEST_LIB_DOWNLOAD_DIR, "junit-4.13.1.jar") + os.pathsep
+    # if jee_support:
+    #     te_command += os.path.join(constants.TKLTEST_LIB_DIR,
+    #                                "evosuite-standalone-runtime-"+constants.EVOSUITE_VERSION+"-SNAPSHOT.jar") + os.pathsep
+    #     te_command += os.path.join(constants.TKLTEST_LIB_DOWNLOAD_DIR, "junit-4.13.1.jar") + os.pathsep
     te_command += os.path.join(constants.TKLTEST_LIB_DIR, "ccmcl.jar") + os.pathsep
-    te_command += os.path.join(constants.TKLTEST_LIB_DOWNLOAD_DIR, "jackson-databind-2.12.5.jar") + os.pathsep
-    te_command += os.path.join(constants.TKLTEST_LIB_DOWNLOAD_DIR, "jackson-core-2.12.5.jar") + os.pathsep
-    te_command += os.path.join(constants.TKLTEST_LIB_DOWNLOAD_DIR, "jackson-annotations-2.12.5.jar") + os.pathsep
+    te_command += os.path.join(constants.TKLTEST_LIB_DOWNLOAD_DIR, "jackson-databind-2.12.6.1.jar") + os.pathsep
+    te_command += os.path.join(constants.TKLTEST_LIB_DOWNLOAD_DIR, "jackson-core-2.12.6.jar") + os.pathsep
+    te_command += os.path.join(constants.TKLTEST_LIB_DOWNLOAD_DIR, "jackson-annotations-2.12.6.jar") + os.pathsep
     te_command += os.path.join(constants.TKLTEST_LIB_DOWNLOAD_DIR, "commons-cli-1.4.jar") + os.pathsep
     te_command += os.path.join(constants.TKLTEST_LIB_DOWNLOAD_DIR, "commons-io-2.6.jar") + os.pathsep
     te_command += os.path.join(constants.TKLTEST_LIB_DOWNLOAD_DIR, "javaparser-core-3.16.1.jar") + os.pathsep
@@ -465,8 +479,8 @@ def extend_sequences(app_name, monolith_app_path, app_classpath_file, ctd_file, 
     te_command += " -tp " + ctd_file
     te_command += " -ts " + bb_seq_file
     te_command += " -od " + test_directory
-    if jee_support:
-        te_command += " -jee"
+    # if jee_support:
+    #     te_command += " -jee"
 
     if bad_path:
         te_command += " -bp"
@@ -501,7 +515,6 @@ def extend_sequences(app_name, monolith_app_path, app_classpath_file, ctd_file, 
         tkltest_status('Extender process has not terminated despite its completion, forcibly terminating it\n')
         proc.kill()
 
-    tkltest_status("JUnit tests are saved in " + os.path.abspath(test_directory))
 
 def extender_timeout(command, coverage_file_name, verbose):
     global proc, thread_error
@@ -565,7 +578,7 @@ def exclude_classes_covered_by_dev_test(config, output_dir):
     first running the user test suite and the jacoco cli to get the coverage of the developer test suite
     than add to the excluded_class_list all the classes that already covered
     '''
-    if not config['dev_tests']['build_file']:
+    if not config['generate']['app_build_files']:
         return
     if config['dev_tests']['coverage_threshold'] >= 100:
         return

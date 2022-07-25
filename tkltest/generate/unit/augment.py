@@ -1,8 +1,11 @@
 # ***************************************************************************
 # Copyright IBM Corporation 2021
 #
-# Licensed under the Eclipse Public License 2.0, Version 2.0 (the "License");
+# Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,6 +20,7 @@ import re
 import shutil
 import subprocess
 import sys
+import copy
 
 from tkltest.util import constants
 from tkltest.util.unit import coverage_util
@@ -44,7 +48,7 @@ def augment_with_code_coverage(config, build_file, build_type, ctd_test_dir, rep
     Args:
         config (dict): loaded and validated config information
         build_file (str): Build file to use for running tests
-        build_type (str): Type of build file (either ant or maven)
+        build_type (str): Type of build file (either ant, maven or gradle)
         ctd_test_dir (str): Root directory for CTD tests
         report_dir (str): Main reports directory, under which coverage report is generated
 
@@ -54,7 +58,8 @@ def augment_with_code_coverage(config, build_file, build_type, ctd_test_dir, rep
     """
 
     if config['dev_tests']['use_for_augmentation']:
-        dev_tests = config['dev_tests']
+        dev_tests = copy.copy(config['dev_tests'])
+        dev_tests['build_file'] = config['generate']['app_build_files'][0]
     else:
         dev_tests = None
     tkltest_status('Performing coverage-driven test-suite augmentation and optimization')
@@ -69,6 +74,7 @@ def augment_with_code_coverage(config, build_file, build_type, ctd_test_dir, rep
             build_type=build_type,
             report_dir=report_dir,
             class_files=config['general']['monolith_app_path'],
+            jdk_path=config['general']['java_jdk_home'],
             dev_tests=dev_tests
     )
 
@@ -76,7 +82,7 @@ def augment_with_code_coverage(config, build_file, build_type, ctd_test_dir, rep
         tkltest_status('Failed to collect coverage for tests in the augmentation test pool, no tests are added.')
         return False
 
-    tkltest_status('Collecting coverage gain for each of {} tests in the augmentation test pool'.format(
+    tkltest_status('Collecting coverage gain for each of {} test files in the augmentation test pool'.format(
         len(test_class_augment_pool)))
 
     # initialize map for test classes that provide coverage gain
@@ -87,7 +93,8 @@ def augment_with_code_coverage(config, build_file, build_type, ctd_test_dir, rep
         class_files=config['general']['monolith_app_path'],
         raw_cov_dir=raw_cov_data_dir,
         report_dir=report_dir,
-        max_memory=config['general']['max_memory_for_coverage']
+        max_memory=config['general']['max_memory_for_coverage'],
+        jdk_path=config['general']['java_jdk_home']
     )
 
     if test_class_augment_pool:
@@ -104,7 +111,8 @@ def augment_with_code_coverage(config, build_file, build_type, ctd_test_dir, rep
         class_files=config['general']['monolith_app_path'],
         raw_cov_dir=raw_cov_data_dir,
         report_dir=report_dir,
-        max_memory=config['general']['max_memory_for_coverage']
+        max_memory=config['general']['max_memory_for_coverage'],
+        jdk_path=config['general']['java_jdk_home']
     )
     final_test_method_count = __get_test_method_count(ctd_test_dir)
     final_inst_cov_rate = safe_div(augmented_coverage['instruction_covered'], augmented_coverage['instruction_total'])
@@ -134,7 +142,7 @@ def augment_with_code_coverage(config, build_file, build_type, ctd_test_dir, rep
 
 
 def __compute_base_and_augmenting_tests_coverage(ctd_test_dir, evosuite_test_dir, build_file, build_type, report_dir,
-                                                 class_files=None, dev_tests=None):
+                                                 jdk_path, class_files=None, dev_tests=None):
     """Computes base test suite and augment test suite for coverage-based augmentation.
 
     Given the CTD test suite and the evosuite test suite, computes coverage efficiency of both test suites
@@ -145,8 +153,9 @@ def __compute_base_and_augmenting_tests_coverage(ctd_test_dir, evosuite_test_dir
         ctd_test_dir (str): Root directory for CTD tests
         evosuite_test_dir (str): Root directory for evosuite tests
         build_file (str): Build file to use for running tests
-        build_type (str): Type of build file (either ant or maven)
+        build_type (str): Type of build file (either ant, maven or gradle)
         report_dir (str): Main reports directory, under which coverage report is generated
+        jdk_path (str): path to the jdk home to be used for executing the tests and measuring their coverage
         class_files (str): the class file of the app
         dev_tests (dict): information of user test suite, to add its coverage to the base tests coverage
 
@@ -169,6 +178,7 @@ def __compute_base_and_augmenting_tests_coverage(ctd_test_dir, evosuite_test_dir
                                       report_dir=report_dir, test_suite_name='CTD-guided',
                                       raw_cov_data_dir=raw_cov_data_dir,
                                       class_files=class_files,
+                                      jdk_path = jdk_path,
                                       additional_test_suite=dev_tests)
     if not ctd_test_coverage:
         tkltest_status('Error while computing coverage for ctd test suite: {}'.format(ctd_test_dir), error=True)
@@ -199,6 +209,12 @@ def __compute_base_and_augmenting_tests_coverage(ctd_test_dir, evosuite_test_dir
         for file in files if '_scaffolding' not in file
     ]
 
+    if len(augmentation_test_pool) == 0:
+        tkltest_status('Warning: no EvoSuite tests found for augmentation')
+    else:
+        tkltest_status('Computing individual coverage for each of {} test files in the augmentation test pool'
+                   .format(len(augmentation_test_pool)))
+
     counter = 1
     has_coverage = False
     for test in augmentation_test_pool:
@@ -212,13 +228,10 @@ def __compute_base_and_augmenting_tests_coverage(ctd_test_dir, evosuite_test_dir
         test_coverage, test_method_count, inst_cov_efficiency = \
             __compute_coverage_efficiency(test_dir=ctd_test_dir, build_file=build_file, build_type=build_type,
                                       report_dir=report_dir, test_suite_name=os.path.basename(test)[:-5],
-                                      raw_cov_data_dir=raw_cov_data_dir)
+                                      raw_cov_data_dir=raw_cov_data_dir, jdk_path=jdk_path)
         if not test_coverage:
-            tkltest_status('Error while computing coverage for test: {}'.format(test), error=True)
-            __initialize_test_directory(ctd_test_dir=ctd_test_dir, source_test_dir=ctd_test_dir_bak)
-            sys.exit(1)
-
-        if test_coverage['instruction_covered'] > 0:
+            tkltest_status('Warning: Error while computing coverage for test, skipping current test file {}'.format(test))
+        elif test_coverage['instruction_covered'] > 0:
             has_coverage = True
         coverage_util.remove_test_class_from_ctd_suite(test_class=test, test_directory=ctd_test_dir)
 
@@ -233,7 +246,7 @@ def __compute_base_and_augmenting_tests_coverage(ctd_test_dir, evosuite_test_dir
 
 
 def __compute_coverage_efficiency(test_dir, build_file, build_type, report_dir, test_suite_name,
-                                  raw_cov_data_dir, class_files=None, additional_test_suite=None):
+                                  raw_cov_data_dir, jdk_path, class_files=None, additional_test_suite=None):
     """Computes and returns coverage efficiency of the given test suite.
 
     Computes coverage efficiency of the given test suite as instruction coverage rate per test method
@@ -248,7 +261,8 @@ def __compute_coverage_efficiency(test_dir, build_file, build_type, report_dir, 
                                                               raw_cov_data_dir=raw_cov_data_dir,
                                                               raw_cov_data_file_pref=test_suite_name,
                                                               class_files=class_files,
-                                                              additional_test_suite=additional_test_suite)
+                                                              additional_test_suite=additional_test_suite,
+                                                              jdk_path=jdk_path)
     if not test_coverage:
         return None, None, None
     inst_cov_rate = safe_div(test_coverage['instruction_covered'], test_coverage['instruction_total'])
@@ -310,7 +324,7 @@ def __get_test_method_count(test_dir):
 
 
 def __compute_tests_with_coverage_gain(test_class_augment_pool, ctd_test_dir, base_ctd_coverage, class_files,
-                                       raw_cov_dir, report_dir, max_memory):
+                                       raw_cov_dir, report_dir, max_memory, jdk_path):
     """Computes coverage delta for each test class in the augment pool of tests.
 
     Computes for each test class in the test augment pool additional instruction, line, and branch coverage that
@@ -325,6 +339,8 @@ def __compute_tests_with_coverage_gain(test_class_augment_pool, ctd_test_dir, ba
         class_files (list): App classes paths
         raw_cov_dir (str): Directory containing raw coverage data files
         report_dir (str): Main reports directory, under which coverage report is generated
+        max_memory (int): maximal memory to use for merging coverage reports
+        jdk_path (str): path to the jdk home to be used for executing the tests and measuring their coverage
 
     Returns:
         dict: information about tests that provide coverage gain
@@ -353,6 +369,9 @@ def __compute_tests_with_coverage_gain(test_class_augment_pool, ctd_test_dir, ba
         test_raw_cov_file = os.path.join(raw_cov_dir,
                                          os.path.basename(test_class)[:-5]+constants.JACOCO_SUFFIX_FOR_AUGMENTATION)
 
+        if not os.path.isfile(test_raw_cov_file):
+            tkltest_status('Warning: {} does not exist, skipping current test file {}'.format(test_raw_cov_file, test_class))
+            continue
         # get coverage delta for test class against base CTD coverage
         try:
             coverage_delta, total_coverage = coverage_util.get_delta_coverage(test=test_class,
@@ -362,7 +381,8 @@ def __compute_tests_with_coverage_gain(test_class_augment_pool, ctd_test_dir, ba
                                                                               class_files=class_files,
                                                                               base_coverage=base_ctd_coverage,
                                                                               remove_merged_cov_file=True,
-                                                                              max_memory=max_memory)
+                                                                              max_memory=max_memory,
+                                                                              jdk_path=jdk_path)
             #coverage_delta = coverage_util.get_coverage_for_test_suite(
             #    build_file=build_file, build_type=build_type, test_root_dir=ctd_test_dir,
             #    report_dir=report_dir, base_coverage=base_ctd_coverage)
@@ -375,7 +395,11 @@ def __compute_tests_with_coverage_gain(test_class_augment_pool, ctd_test_dir, ba
             else:
                 logging.info('No coverage gain from test class {}'.format(test_class))
         except subprocess.CalledProcessError as e:
-            logging.error('Error running augmented test suite with class {}: {}'.format(test_class, e))
+            logging.error('Warning: error occurred while merging augmented test suite with class {}: {}'.format(test_class, e))
+
+        if not coverage_delta and not total_coverage:
+            tkltest_status('Terminating augmentation due to memory exhaustion')
+            return tests_with_coverage_gain, total_inst_cov_gain, total_branch_cov_gain
 
         # remove test class from test suite
         #coverage_util.remove_test_class_from_ctd_suite(test_class=test_class, test_directory=ctd_test_dir)
@@ -384,7 +408,7 @@ def __compute_tests_with_coverage_gain(test_class_augment_pool, ctd_test_dir, ba
 
 
 def __augment_ctd_test_suite(tests_with_coverage_gain, ctd_test_dir, base_ctd_coverage, class_files,
-                             raw_cov_dir, report_dir, max_memory):
+                             raw_cov_dir, report_dir, max_memory, jdk_path):
     """Augments CTD test suite with tests that contribute to additional coverage.
 
     Iterates over test classes that contribute to coverage gain, and adds them to the augmented test suite
@@ -399,6 +423,8 @@ def __augment_ctd_test_suite(tests_with_coverage_gain, ctd_test_dir, base_ctd_co
         class_files (list): App classes paths
         raw_cov_dir (str): Directory containing raw coverage data files
         report_dir (str): Main reports directory, under which coverage report is generated
+        max_memory (int):
+        jdk_path (str): path to the jdk home to be used for executing the tests and measuring their coverage
 
     Returns:
         dict: information about coverage of augmented test suite
@@ -436,7 +462,9 @@ def __augment_ctd_test_suite(tests_with_coverage_gain, ctd_test_dir, base_ctd_co
 
             test_raw_cov_file = os.path.join(raw_cov_dir,
                                         os.path.basename(test_class)[:-5] + constants.JACOCO_SUFFIX_FOR_AUGMENTATION)
-
+            if not os.path.isfile(test_raw_cov_file):
+                tkltest_status('Warning: coverage date file {} does not exist, skipping current test file {}'.format(test_raw_cov_file, test_class))
+                continue
             try:
                 coverage_delta, augmented_coverage = coverage_util.get_delta_coverage(
                     test=test_class, test_raw_cov_file=test_raw_cov_file,
@@ -444,10 +472,15 @@ def __augment_ctd_test_suite(tests_with_coverage_gain, ctd_test_dir, base_ctd_co
                     main_coverage_dir=main_coverage_dir, class_files=class_files,
                     base_coverage=curr_coverage,
                     remove_merged_cov_file=first,
-                    max_memory=max_memory)
+                    max_memory=max_memory, jdk_path=jdk_path)
                 first = False
             except subprocess.CalledProcessError as e:
-                logging.error('Error merging augmented test suite with class {}: {}'.format(test_class, e))
+                logging.error('Warning: error occurred while merging augmented test suite with class {}: {}'.format(test_class, e))
+
+            if not coverage_delta and not augmented_coverage:
+                tkltest_status('Terminating augmentation due to memory exhaustion')
+                coverage_util.remove_test_class_from_ctd_suite(test_class=test_class, test_directory=ctd_test_dir)
+                return curr_coverage, added_test_classes
 
             if coverage_delta['instruction_cov_delta'] > 0 or coverage_delta['branch_cov_delta'] > 0:
                 curr_coverage = augmented_coverage

@@ -10,21 +10,18 @@ name = "TKLTEST_CONFIG_FILE"
 
 
 [generate]
-jee_support = false
+# jee_support = false
 no_diff_assertions = false
-partitions_file = ""
+# partitions_file = ""
 target_class_list = []
 excluded_class_list = []
 time_limit = 10
-
-app_build_type = 'gradle'
-
 app_build_files = ["test/data/splitNjoin/app/build.gradle"]
 app_build_settings_files = ["test/data/splitNjoin/settings.gradle"]
 
 [execute]
 app_packages = ['splitNjoin.*']
-create_build_file = true
+no_create_build_file = false
 code_coverage = true
 online_instrumentation = false
 test_class = ""
@@ -34,8 +31,8 @@ base_test_generator = "combined"
 no_ctd_coverage = false
 interaction_level = 1
 num_seq_executions = 10
-refactored_app_path_prefix = ""
-refactored_app_path_suffix = []
+# refactored_app_path_prefix = ""
+# refactored_app_path_suffix = []
 
 [generate.evosuite]
 criterion = [ "BRANCH",]
@@ -45,8 +42,6 @@ no_error_revealing_tests = false
 
 
 [dev_tests]
-    build_type = "gradle"
-    build_file = "test/data/splitNjoin/user-tests/build.gradle"
     build_targets =  ["clean", "test"]
     coverage_exec_file = "test/data/splitNjoin/user-tests/jacoco/jacoco.exec"
     compare_code_coverage = false

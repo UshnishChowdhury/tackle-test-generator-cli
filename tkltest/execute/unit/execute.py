@@ -1,8 +1,11 @@
 # ***************************************************************************
 # Copyright IBM Corporation 2021
 #
-# Licensed under the Eclipse Public License 2.0, Version 2.0 (the "License");
+# Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -43,23 +46,13 @@ def process_execute_command(args, config):
 
 
 def run_dev_tests(config):
-    build_type = config['dev_tests']['build_type']
+    build_type = config['general']['build_type']
     build_targets = ' '.join(config['dev_tests']['build_targets'])
-    ant_build_file = ''
-    maven_build_file = ''
-    gradle_build_file = ''
-    if build_type == 'ant':
-        ant_build_file = config['dev_tests']['build_file']
-    elif build_type == 'maven':
-        maven_build_file = config['dev_tests']['build_file']
-    else:
-        gradle_build_file = config['dev_tests']['build_file']
-    __run_test_cases(create_build=False,
+    build_file = config['generate']['app_build_files'][0]
+    __run_test_cases(no_create_build=True,
                      build_type=build_type,
                      build_targets=build_targets,
-                     ant_build_file=ant_build_file,
-                     maven_build_file=maven_build_file,
-                     gradle_build_file=gradle_build_file,
+                     build_file=build_file,
                      app_name=config['general']['app_name'],
                      collect_codecoverage=True,
                      verbose=config['general']['verbose'],
@@ -135,11 +128,19 @@ def __execute_base(args, config):
         offline_inst = gen_config['general']['offline_instrumentation']
     else:
         offline_inst = config['general']['offline_instrumentation']
-    __run_test_cases(create_build=config['execute']['create_build_file'],
-                     build_type=config['general']['build_type'],
-                     ant_build_file=test_root_dir + os.sep + "build.xml",
-                     maven_build_file=test_root_dir + os.sep + "pom.xml",
-                     gradle_build_file=test_root_dir + os.sep + "build.gradle",
+
+    build_type = config['general']['build_type']
+    if build_type == 'ant':
+        build_file = test_root_dir + os.sep + "build.xml"
+    elif build_type == 'maven':
+        build_file = test_root_dir + os.sep + "pom.xml"
+    else:
+        build_file = test_root_dir + os.sep + "build.gradle"
+
+    __run_test_cases(no_create_build=config['execute']['no_create_build_file'],
+                     build_type=build_type,
+                     jdk_path=config['general']['java_jdk_home'],
+                     build_file=build_file,
                      app_name=config['general']['app_name'],
                      monolith_app_path=config['general']['monolith_app_path'],
                      app_classpath=classpath,
@@ -147,7 +148,7 @@ def __execute_base(args, config):
                      test_dirs=test_dirs,
                      collect_codecoverage=config['execute']['code_coverage'] or config['dev_tests']['compare_code_coverage'],
                      app_packages=config['execute']['app_packages'],
-                     partitions_file=gen_config['generate']['partitions_file'],
+                     # partitions_file=gen_config['generate']['partitions_file'],
                      target_class_list=gen_config['generate']['target_class_list'],
                      reports_dir=config['general']['reports_path'],
                      offline_inst=offline_inst,
@@ -157,9 +158,10 @@ def __execute_base(args, config):
 
 
 def __run_test_cases(app_name, collect_codecoverage, verbose,
-                     create_build, build_type, ant_build_file, maven_build_file, gradle_build_file, build_targets='',
-                     test_root_dir='', monolith_app_path='', app_classpath='', test_dirs=[],
-                     app_packages=[], partitions_file='', target_class_list=[], reports_dir='', offline_inst='',
+                     no_create_build, build_type, build_file, build_targets='',
+                     test_root_dir='', monolith_app_path='', app_classpath='', test_dirs=[], jdk_path='', app_packages=[],
+                     # partitions_file='',
+                     target_class_list=[], reports_dir='', offline_inst='',
                      env_vars={}, micro=False, output_dir=''):
 
     tkltest_status('Compiling and running tests in {}'.format(os.path.abspath(test_root_dir)))
@@ -169,15 +171,16 @@ def __run_test_cases(app_name, collect_codecoverage, verbose,
     else:
         main_reports_dir = app_name + constants.TKLTEST_MAIN_REPORT_DIR_SUFFIX
 
-    # generate build files
-    if create_build:
-        ant_build_file, maven_build_file, gradle_build_file = build_util.generate_build_xml(
+    # generate a build file
+    if not no_create_build:
+        build_file = build_util.generate_build_xml(
             app_name=app_name,
+            build_type=build_type,
             monolith_app_path=monolith_app_path,
             app_classpath=app_classpath,
             test_root_dir=test_root_dir,
             test_dirs=test_dirs,
-            partitions_file=partitions_file,
+            # partitions_file=partitions_file,
             target_class_list=target_class_list,
             main_reports_dir=main_reports_dir,
             app_packages=app_packages,
@@ -191,28 +194,37 @@ def __run_test_cases(app_name, collect_codecoverage, verbose,
 
     # current limitation in ant script - if code coverage is requested then junit report is generated as well
 
+    env_vars = dict(os.environ.copy())
+    if jdk_path:
+        env_vars['JAVA_HOME'] = jdk_path
+
     try:
         if build_type == 'maven':
             if not build_targets:
                 build_targets = 'clean verify site'
-            command_util.run_command("mvn -f {} {}".format(maven_build_file, build_targets), verbose=verbose)
+            command_util.run_command("mvn -f {} {}".format(build_file, build_targets),
+                                     verbose=verbose, env_vars=env_vars)
         elif build_type == 'gradle':
             if not build_targets:
                 build_targets = 'tklest_task'
-            if os.path.basename(gradle_build_file) == "build.gradle":
-                command_util.run_command("gradle --project-dir {} {}".format(os.path.dirname(gradle_build_file), build_targets), verbose=verbose)
+            if os.path.basename(build_file) == "build.gradle":
+                command_util.run_command("gradle --project-dir {} {}".format(os.path.dirname(build_file), build_targets),
+                                         verbose=verbose, env_vars=env_vars)
             else:
-                command_util.run_command("gradle -b {} {}".format(gradle_build_file, build_targets), verbose=verbose)
+                command_util.run_command("gradle -b {} {}".format(build_file, build_targets),
+                                         verbose=verbose, env_vars=env_vars)
         else:
             if collect_codecoverage:
                 if not build_targets:
                     build_targets = 'merge-coverage-report'
-                command_util.run_command("ant -f {} {}".format(ant_build_file, build_targets), verbose=verbose)
+                command_util.run_command("ant -f {} {}".format(build_file, build_targets),
+                                         verbose=verbose, env_vars=env_vars)
             else:
                 if build_targets:
-                    tkltest_status('Error executing build {}. Can not build target {} when collect_code_coverage is off'.format(ant_build_file, build_targets), error=True)
+                    tkltest_status('Error executing build {}. Can not build target {} when collect_code_coverage is off'.format(build_file, build_targets), error=True)
                 for partition in partitions:
-                    command_util.run_command("ant -f {} {}{}".format(ant_build_file, 'test-reports_', partition), verbose=verbose)
+                    command_util.run_command("ant -f {} {}{}".format(build_file, 'test-reports_', partition),
+                                             verbose=verbose, env_vars=env_vars)
 
         #else:
          #   task_prefix = 'coverage-reports_' if collect_codecoverage else 'test-reports_' if gen_junit_report else 'execute-tests_'
@@ -285,7 +297,7 @@ def __compare_to_dev_tests_coverage(config, jacoco_raw_date_file = ''):
     os.mkdir(compare_report_dir)
 
     # calling get_dev_test_coverage() to create a xml file and html dir:
-    dev_test_name = os.path.basename(os.path.dirname(config['dev_tests']['build_file']))
+    dev_test_name = os.path.basename(os.path.dirname(config['generate']['app_build_files'][0]))
     dev_coverage_exec = config['dev_tests']['coverage_exec_file']
     dev_coverage_xml, dev_coverage_html, dev_coverage_csv = coverage_util.get_dev_test_coverage(
         config=config,
@@ -322,12 +334,13 @@ def __compare_to_dev_tests_coverage(config, jacoco_raw_date_file = ''):
     coverage_util.generate_coverage_report(monolith_app_path=config['general']['monolith_app_path'],
                                            exec_file=merged_exec_file,
                                            xml_file=merged_coverage_xml,
-                                           html_dir=merged_html_dir)
+                                           html_dir=merged_html_dir,
+                                           jdk_path=config['general']['java_jdk_home'])
     #printing the html report
     CoverageStatisticsHtmlWriter.create_coverage_html_dir(app_statistics, dev_coverage_html, tkltest_html_dir, merged_html_dir, html_compare_dir)
 
 
-def merge_modules_coverage_reports(tkltest_config, modules_configs):
+def merge_modules_coverage_reports(tkltest_config, modules_configs, failed_modules = []):
     '''
     creating one coverage report, by merging the exec files that was created per for each modules
     :param tkltest_config: the user config
@@ -343,7 +356,7 @@ def merge_modules_coverage_reports(tkltest_config, modules_configs):
     app_path = set()
     modules_configs_with_exec_file = []
     # first collect exec files and app_paths
-    for module_config in modules_configs:
+    for module_config in [mc for mc in modules_configs if mc['general']['module_name'] not in failed_modules]:
         module_output_dir = dir_util.get_output_dir(app_name, module_config['general']['module_name'])
         module_test_root_dir = module_config['general']['test_directory']
         if not module_test_root_dir:
@@ -354,7 +367,7 @@ def merge_modules_coverage_reports(tkltest_config, modules_configs):
 
         module_jacoco_exec_file = coverage_util.get_jacoco_exec_file(module_config['general']['build_type'], module_test_root_dir)
         if not os.path.isfile(module_jacoco_exec_file):
-            tkltest_status('Warning: exec_file {} does not exist for module {}'.format(module_jacoco_exec_file, module_config['module_name']))
+            tkltest_status('Warning: exec_file {} does not exist for module {}'.format(module_jacoco_exec_file, module_config['general']['module_name']))
         else:
             jacoco_exec_files.append(module_jacoco_exec_file)
             app_path |= set(module_config['general']['monolith_app_path'])
@@ -402,7 +415,8 @@ def merge_modules_coverage_reports(tkltest_config, modules_configs):
                                            exec_file=merged_exec_file,
                                            xml_file=coverage_xml,
                                            html_dir=coverage_html,
-                                           csv_file=coverage_csv)
+                                           csv_file=coverage_csv,
+                                           jdk_path=tkltest_config['general']['java_jdk_home'])
 
     # compare the the dev tests:
     if tkltest_config['dev_tests']['compare_code_coverage']:

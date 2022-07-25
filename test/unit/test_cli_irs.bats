@@ -57,7 +57,6 @@ setup_file() {
 
     # assert build file is generated
     [ -f $IRS_CTD_AMPLIFIED_TESTDIR/build.xml ]
-    [ -f $IRS_CTD_AMPLIFIED_TESTDIR/pom.xml ]
 }
 
 @test "Test 02: CLI execute irs" {
@@ -186,6 +185,15 @@ setup_file() {
     [ `xmllint $partition_rep_dir/TEST-irs.irs_BusinessProcess_Test.xml -xpath 'string(testsuite/@failures)'` -eq 0 ]
 }
 
+@test "Test 051: CLI [build_type=maven] generate [all-classes] ctd-amplified [reuse_base_tests] irs" {
+    run tkltest-unit --log-level INFO \
+        --config-file $IRS_CONFIG_FILE \
+        --build-type maven \
+        --test-directory $IRS_CTD_AMPLIFIED_TESTDIR \
+        generate ctd-amplified --reuse-base-tests
+    [ $status -eq 0 ]
+}
+
 @test "Test 06: CLI generate execute [all-classes] randoop irs" {
     run tkltest-unit --log-level INFO \
         --config-file $IRS_CONFIG_FILE \
@@ -201,7 +209,6 @@ setup_file() {
 
     # assert build file is generated
     [ -f $IRS_RANDOOP_TESTDIR/build.xml ]
-    [ -f $IRS_RANDOOP_TESTDIR/pom.xml ]
 
     # execute generated tests
     run tkltest-unit --log-level INFO \
@@ -226,7 +233,6 @@ setup_file() {
 
     # assert build file is generated
     [ -f $IRS_EVOSUITE_TESTDIR/build.xml ]
-    [ -f $IRS_EVOSUITE_TESTDIR/pom.xml ]
 
     # execute generated tests
     run tkltest-unit --log-level INFO \
@@ -259,7 +265,6 @@ setup_file() {
     [ $test_count -gt 0 ]
 
     # assert build file is generated
-    [ -f $IRS_CTD_AMPLIFIED_TESTDIR/build.xml ]
     [ -f $IRS_CTD_AMPLIFIED_TESTDIR/pom.xml ]
 
     # execute generated tests

@@ -7,22 +7,22 @@ test_directory = ""
 reports_path = ""
 verbose = false
 offline_instrumentation = false
-build_type = "ant"
+build_type = "gradle"
 
 [generate]
-jee_support = false
+# jee_support = false
 no_diff_assertions = false
-partitions_file = ""
+# partitions_file = ""
 target_class_list = []
 excluded_class_list = []
 time_limit = 10
-app_build_files = []
+app_build_files = ["test/data/failingApp/user-tests/build.gradle"]
 app_build_settings_files = []
-app_build_target = ""
+app_build_ant_target = ""
 
 [execute]
 app_packages = ["failing.*"]
-create_build_file = true
+no_create_build_file = false
 code_coverage = true
 test_class = ""
 
@@ -38,8 +38,8 @@ max_augment_memory = 4096
 no_ctd_coverage = false
 interaction_level = 1
 num_seq_executions = 10
-refactored_app_path_prefix = ""
-refactored_app_path_suffix = []
+# refactored_app_path_prefix = ""
+# refactored_app_path_suffix = []
 reuse_base_tests = false
 
 [generate.evosuite]
@@ -50,8 +50,6 @@ no_error_revealing_tests = false
 
 
 [dev_tests]
-    build_type = "gradle"
-    build_file = "test/data/failingApp/user-tests/build.gradle"
     build_targets =  ["clean", "test"]
     coverage_exec_file = "test/data/failingApp/user-tests/jacoco/jacoco.exec"
 #    compare_code_coverage = true

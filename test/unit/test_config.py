@@ -1,8 +1,11 @@
 # ***************************************************************************
 # Copyright IBM Corporation 2021
 #
-# Licensed under the Eclipse Public License 2.0, Version 2.0 (the "License");
+# Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -22,7 +25,7 @@ from tkltest.util import config_util, config_options, constants
 class ConfigTest(unittest.TestCase):
 
     config_file = os.path.join('test', 'data', 'irs', 'tkltest_config.toml')
-    partitions_file = os.path.join('test', 'data', 'irs', 'refactored', 'PartitionsFile.json')
+    # partitions_file = os.path.join('test', 'data', 'irs', 'refactored', 'PartitionsFile.json')
 
     def test_config_util_init(self) -> None:
         """Test config init"""
@@ -49,7 +52,7 @@ class ConfigTest(unittest.TestCase):
         self.assertTrue(config['generate']['no_diff_assertions'])
 
         # add partitions file to args and load config
-        args.partitions_file = self.partitions_file
+        # args.partitions_file = self.partitions_file
         config_util.load_config(args=args)
 
 

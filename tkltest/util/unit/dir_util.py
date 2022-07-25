@@ -1,8 +1,11 @@
 # ***************************************************************************
 # Copyright IBM Corporation 2021
 #
-# Licensed under the Eclipse Public License 2.0, Version 2.0 (the "License");
+# Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -39,8 +42,8 @@ def get_output_dir(app_name, module_name):
     # (currently, at the core, the locations of these jars are hard coded)
     if not os.path.isdir(os.path.join(output_dir, "lib")):
         os.makedirs(os.path.join(output_dir, "lib", "download"))
-        shutil.copy(os.path.join(TKLTEST_LIB_DOWNLOAD_DIR, "replacecall-"+RANDOOP_VERSION+".jar"), os.path.join(output_dir, "lib", "download"))
-        shutil.copy(os.path.join(TKLTEST_LIB_DOWNLOAD_DIR, "randoop-all-"+RANDOOP_VERSION+".jar"), os.path.join(output_dir, "lib", "download"))
+    shutil.copy(os.path.join(TKLTEST_LIB_DOWNLOAD_DIR, "replacecall-"+RANDOOP_REPLACECALL_VERSION+".jar"), os.path.join(output_dir, "lib", "download"))
+    shutil.copy(os.path.join(TKLTEST_LIB_DOWNLOAD_DIR, "randoop-"+RANDOOP_VERSION+".jar"), os.path.join(output_dir, "lib", "download"))
     # end of todo
     return output_dir
 
@@ -59,7 +62,7 @@ def cd_app_output_dir(app_name):
 
 def delete_app_output(app_name):
     for filename in os.listdir('.'):
-        if filename.startswith(app_name):
+        if filename.startswith(app_name) or filename.startswith('tkltest'):
             continue
         try:
             if os.path.isfile(filename) or os.path.islink(filename):

@@ -1,8 +1,11 @@
 # ***************************************************************************
 # Copyright IBM Corporation 2021
 #
-# Licensed under the Eclipse Public License 2.0, Version 2.0 (the "License");
+# Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,6 +15,7 @@
 # ***************************************************************************
 
 import os
+from importlib import resources
 
 # name of default config file
 TKLTEST_DEFAULT_CONFIG_FILE='tkltest_config.toml'
@@ -23,11 +27,14 @@ TKLTEST_UNIT_OUTPUT_DIR_PREFIX = 'tkltest-output-unit-'
 
 # cli lib download dir
 TKLTEST_CLI_DIR = os.getcwd()
-TKLTEST_LIB_DIR = os.path.join(TKLTEST_CLI_DIR, 'lib')
-TKLTEST_LIB_DOWNLOAD_DIR = os.path.join(TKLTEST_LIB_DIR, 'download')
+# TKLTEST_LIB_DIR = os.path.join(TKLTEST_CLI_DIR, 'tkltest-lib')
+with resources.files('tkltest-lib') as libpath:
+    TKLTEST_LIB_DIR = str(libpath)
+# TKLTEST_LIB_DOWNLOAD_DIR = os.path.join(TKLTEST_LIB_DIR, 'download')
+TKLTEST_LIB_DOWNLOAD_DIR = TKLTEST_LIB_DIR
 
 # version of unit testgen core
-TKLTEST_UNIT_CORE_VERSION = '1.1.0'
+TKLTEST_UNIT_CORE_VERSION = 'main-SNAPSHOT'
 TKLTEST_UNIT_CORE_JAR = os.path.join(TKLTEST_LIB_DOWNLOAD_DIR,
                                      'tackle-test-generator-unit-{}.jar'.format(TKLTEST_UNIT_CORE_VERSION))
 
@@ -86,10 +93,11 @@ BASE_TEST_GENERATORS = {
 ERROR_PATTERNS_FILE = 'errorPatterns.json'
 
 # randoop used version
-RANDOOP_VERSION = "4.2.6"
+RANDOOP_VERSION = "v4.3.0"
+RANDOOP_REPLACECALL_VERSION = "4.3.0"
 
 # evosuite used version
-EVOSUITE_VERSION = "1.0.7"
+EVOSUITE_VERSION = "v1.2.0"
 
 # soot used version
 SOOT_VERSION = "4.1.0"
@@ -149,21 +157,9 @@ JACOCO_CLI_JAR_NAME = 'org.jacoco.cli-0.8.7-nodeps.jar'
 # output directory for generated UI tests
 TKLTEST_UI_OUTPUT_DIR_PREFIX = 'tkltest-output-ui-'
 
-# UI lib download dir
-TKLTEST_UI_LIB_DOWNLOAD_DIR = os.path.join('lib', 'download')
-
 # version of ui testgen core
-TKLTEST_UI_CORE_VERSION = '0.0.1'
-TKLTEST_UI_CORE_JAR = os.path.join(TKLTEST_UI_LIB_DOWNLOAD_DIR,
-                                   'tackle-test-generator-ui-{}.jar'.format(TKLTEST_UI_CORE_VERSION))
-# crawljax version and jar
-CRAWLJAX_VERSION = '5.0-frag'
-CRAWLJAX_JAR = os.path.join(TKLTEST_UI_LIB_DOWNLOAD_DIR, 'crawljax-examples-{}.jar'.format(CRAWLJAX_VERSION))
-
-# library jars
-ANTLR_JAR = os.path.join(TKLTEST_UI_LIB_DOWNLOAD_DIR, 'antlr4-runtime-4.7.2.jar')
-COMMONS_CLI_JAR = os.path.join(TKLTEST_UI_LIB_DOWNLOAD_DIR, 'commons-cli-1.4.jar')
-TOML_JAR = os.path.join(TKLTEST_UI_LIB_DOWNLOAD_DIR, 'tomlj-1.0.0.jar')
+TKLTEST_UI_CORE_VERSION = 'main-SNAPSHOT-jar-with-dependencies'
+TKLTEST_UI_CORE_JAR = 'tackle-test-generator-ui-{}.jar'.format(TKLTEST_UI_CORE_VERSION)
 
 # generated test class
 CRAWLJAX_API_TEST_FILE = os.path.join('src', 'test', 'java', 'generated', 'GeneratedTests.java')

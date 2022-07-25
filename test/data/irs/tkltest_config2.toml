@@ -8,12 +8,13 @@ name = "TKLTEST_CONFIG_FILE"
     # test_directory = "irs-ctd-amplified-tests"
     # JDK home directory
     java_jdk_home = ""
+    build_type = "maven"
 
 # options for "tkltest generate" command
 [generate]
     time_limit = 2
     add_assertions = false
-    jee_support = false
+    # jee_support = false
 
     # partitions file path. If specified, this option overrides target_class_list option.
     # partitions_file = "test/data/irs/refactored/PartitionsFile.json"
@@ -34,8 +35,8 @@ name = "TKLTEST_CONFIG_FILE"
     base_test_generator = "combined" # both Randoop and EvoSuite
     #base_test_generator = "randoop"
     #base_test_generator = "evosuite"
-    refactored_app_path_prefix = "test/data/irs/refactored"
-    refactored_app_path_suffix = ["target/classes"]
+#     refactored_app_path_prefix = "test/data/irs/refactored"
+#     refactored_app_path_suffix = ["target/classes"]
     interaction_level = 1
     no_ctd_coverage = false
     num_seq_executions = 2

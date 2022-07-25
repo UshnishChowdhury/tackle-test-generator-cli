@@ -1,8 +1,11 @@
 # ***************************************************************************
 # Copyright IBM Corporation 2021
 #
-# Licensed under the Eclipse Public License 2.0, Version 2.0 (the "License");
+# Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -11,32 +14,70 @@
 # limitations under the License.
 # ***************************************************************************
 
-import json
 import logging
 import os
 import subprocess
 import sys
 import pathlib
+import shutil
 
 from yattag import Doc, indent
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, PackageLoader
+import xml.etree.ElementTree as ElementTree
+from xml.dom import minidom
 
 from tkltest.util import constants
 from tkltest.util.logging_util import tkltest_status
 
+required_lib_jars = {
+    ###
+    # this is a list of dependencies that are needed for both the testing build file, and the app build file
+    # each dependency is represented as:
+    # (is_needed_for_app_build_file, groupId, artifactId, version, classifier)
+    ###
+    (True, 'junit', 'junit', '4.13.1', ''),
+    (True, 'org.hamcrest', 'hamcrest-all', '1.3', ''),
+    (True, 'com.github.EvoSuite.evosuite', 'evosuite-standalone-runtime', constants.EVOSUITE_VERSION, ''),
+    (True, 'com.github.EvoSuite.evosuite', 'evosuite-master', constants.EVOSUITE_VERSION, ''),
+    (False, 'org.jacoco', 'org.jacoco.cli', constants.JACOCO_MAVEN_VERSION, 'nodeps'),
+    (False, 'org.jacoco', 'org.jacoco.agent', constants.JACOCO_MAVEN_VERSION, ''),
+}
 
-def get_build_classpath(config, subcommand='ctd-amplified', partition=None):
+# def __get_jars_for_tests_execution():
+#     required_lib_jars = {
+#         constants.JACOCO_CLI_JAR_NAME,
+#         'org.jacoco.agent-0.8.7.jar',
+#         'junit-4.13.1.jar',
+#         'hamcrest-all-1.3.jar',
+#         'evosuite-standalone-runtime-' + constants.EVOSUITE_VERSION + '.jar',
+#         'evosuite-master-' + constants.EVOSUITE_VERSION + '.jar',
+#     }
+#     return [
+#         os.path.join(os.path.abspath(dp), f) for dp, dn, filenames in os.walk(constants.TKLTEST_LIB_DIR) for f in filenames
+#         if os.path.splitext(f)[1] == '.jar' and f in required_lib_jars
+#     ]
+
+def __get_jars_for_tests_execution():
+    required_lib_jars_names = [artifactId + '-' + version + ('-' + classifier if classifier else '') + '.jar'
+                               for needed_for_app_build_file, groupId, artifactId, version, classifier in required_lib_jars]
+    return [
+        os.path.join(os.path.abspath(dp), f) for dp, dn, filenames in os.walk(constants.TKLTEST_LIB_DIR) for f in filenames
+        if os.path.splitext(f)[1] == '.jar' and f in required_lib_jars_names
+    ]
+
+
+def get_build_classpath(config, subcommand='ctd-amplified'):
     """Creates and returns build classpath.
 
-    Creates and returns build path in the Java CLASSPATH format, consisting of app library dependencies and
-    tkltest cli library dependencies.
+    Creates and returns build path, consisting of app library dependencies and
+    tkltest dependencies required for building and running the generated test cases.
 
     Args:
         config: loaded configuration information
-        partition: name of partition (if build is being done for a partition of the refactored app)
+        # partition: name of partition (if build is being done for a partition of the refactored app)
 
     Returns:
-        string representing build path in the Java CLASSPATH format
+        string representing build path
     """
     class_paths = []
     classpath_file = config['general']['app_classpath_file']
@@ -51,43 +92,41 @@ def get_build_classpath(config, subcommand='ctd-amplified', partition=None):
                     class_paths.append(os.path.abspath(line))
 
     # add path for app classes for mono or micro version
-    if partition is not None:
-        if partition not in config['execute']['micro']['partition_paths'].keys():
-            raise Exception('Partition path not specified for partition: {}'.format(partition))
-        for part_path in config['execute']['micro']['partition_paths'][partition]:
-            class_paths.insert(0, os.path.abspath(part_path))
-        logging.debug('Added paths for partition {}: {}'.format(
-            partition, config['execute']['micro']['partition_paths'][partition]
-        ))
+    # if partition is not None:
+    #     if partition not in config['execute']['micro']['partition_paths'].keys():
+    #         raise Exception('Partition path not specified for partition: {}'.format(partition))
+    #     for part_path in config['execute']['micro']['partition_paths'][partition]:
+    #         class_paths.insert(0, os.path.abspath(part_path))
+    #     logging.debug('Added paths for partition {}: {}'.format(
+    #         partition, config['execute']['micro']['partition_paths'][partition]
+    #     ))
 
-    # add lib dependencies for tkltest to classpath
-    class_paths.extend([
-        os.path.join(os.path.abspath(dp), f) for dp, dn, filenames in os.walk(constants.TKLTEST_LIB_DIR) for f in filenames
-        if os.path.splitext(f)[1] == '.jar'
-    ])
+    class_paths.extend(__get_jars_for_tests_execution())
 
-    if config['generate']['jee_support'] and subcommand == 'ctd-amplified':
-            class_paths.insert(0, os.path.abspath(config['general']['app_name']+constants.TKL_EVOSUITE_OUTDIR_SUFFIX))  # for EvoSuite Scaffolding classes
+    # if config['generate']['jee_support'] and subcommand == 'ctd-amplified':
+    #         class_paths.insert(0, os.path.abspath(config['general']['app_name']+constants.TKL_EVOSUITE_OUTDIR_SUFFIX))  # for EvoSuite Scaffolding classes
 
     classpath_str = os.pathsep.join(class_paths)
     logging.info('classpath: {} '.format(classpath_str))
     return classpath_str
 
 
-def generate_build_xml(app_name, monolith_app_path, app_classpath, test_root_dir, test_dirs,
-                           partitions_file, target_class_list, main_reports_dir, app_packages='',
-                           collect_codecoverage=False, offline_instrumentation=False, output_dir=''):
-    """Generates Ant build.xml, Maven pom.xml, and Gradle build.gradle for running tests.
+def generate_build_xml(app_name, build_type, monolith_app_path, app_classpath, test_root_dir, test_dirs,
+                       # partitions_file,
+                       target_class_list, main_reports_dir, app_packages='',
+                       collect_codecoverage=False, offline_instrumentation=False, output_dir=''):
+    """Generates Ant build.xml, Maven pom.xml, or Gradle build.gradle for running tests.
 
-    Generates Ant build.xml, aMaven pom.xml and Gradle build.gradle for running generated tests and collecting coverage information.
+    Generates a build file depending on the build_type, for running generated tests and collecting coverage information.
 
     Args:
         app_name: name of the app under test
+        build_type: build type of the app, type of build file to generate (ant, maven or gradle)
         monolith_app_path: paths to classes for the app under test
         app_classpath: Java CLASSPATH for building the app under test
         test_root_dir: root directory of test cases
         test_dirs: subdirectories containing test cases under root directory
-        partitions_file: file containing partitions information
+        # partitions_file: file containing partitions information
         target_class_list: list of target classes for testing
         main_reports_dir: root directory for test reports
         app_packages: app packages to be tracked for code coverage
@@ -95,43 +134,48 @@ def generate_build_xml(app_name, monolith_app_path, app_classpath, test_root_dir
         offline_instrumentation whether to perform offline instrumentation of app classes
         output_dir: running directory
     """
-    if partitions_file:
-        with open(app_name + constants.TKL_CTD_TEST_PLAN_FILE_SUFFIX) as ctd_model:
-            ctd_model_data = json.load(ctd_model)
-            class_list = [item[1].keys() for item in ctd_model_data["models_and_test_plans"].items()]
-            class_set = set().union(*class_list)
-            app_reported_packages = list(class_set)
-    elif target_class_list:
+    # if partitions_file:
+    #     with open(app_name + constants.TKL_CTD_TEST_PLAN_FILE_SUFFIX) as ctd_model:
+    #         ctd_model_data = json.load(ctd_model)
+    #         class_list = [item[1].keys() for item in ctd_model_data["models_and_test_plans"].items()]
+    #         class_set = set().union(*class_list)
+    #         app_reported_packages = list(class_set)
+    # elif
+    if target_class_list:
         app_reported_packages = target_class_list
     else:
         app_reported_packages = []
 
     # set the build xml file name and content based on the build file
-    ant_build_xml_file = test_root_dir + os.sep + 'build.xml'
     # if micro:
     #     build_xml_file += 'micro.xml'
     # else:
     #     build_xml_file += 'mono.xml'
 
-    __build_ant(app_classpath, app_name, monolith_app_path, test_root_dir, test_dirs, collect_codecoverage,
-                app_packages, app_reported_packages, offline_instrumentation, main_reports_dir,
-                ant_build_xml_file, output_dir)
+    if build_type == 'ant':
+        generated_build_file = test_root_dir + os.sep + 'build.xml'
+        __build_ant(app_classpath, app_name, monolith_app_path, test_root_dir, test_dirs, collect_codecoverage,
+                    app_packages, app_reported_packages, offline_instrumentation, main_reports_dir,
+                    generated_build_file, output_dir)
 
-    # TODO: this is a hack to enable defining namespace in the build file, since doc tags do not allow colons in attributes
-    with open(ant_build_xml_file, 'r') as inp:
-        content = inp.read().replace("xmlnsjacoco", "xmlns:jacoco")
-    with open(ant_build_xml_file, 'w') as outp:
-        outp.write(content)
+        # TODO: this is a hack to enable defining namespace in the build file, since doc tags do not allow colons in attributes
+        with open(generated_build_file, 'r') as inp:
+            content = inp.read().replace("xmlnsjacoco", "xmlns:jacoco")
+        with open(generated_build_file, 'w') as outp:
+            outp.write(content)
 
-    maven_build_xml_file = test_root_dir + os.sep + 'pom.xml'
-    __build_maven(app_classpath, app_name, monolith_app_path, test_root_dir, test_dirs, collect_codecoverage,
-                  app_packages, app_reported_packages, offline_instrumentation, main_reports_dir, maven_build_xml_file,output_dir)
+    elif build_type == 'maven':
+        generated_build_file = test_root_dir + os.sep + 'pom.xml'
+        __build_maven(app_classpath, app_name, monolith_app_path, test_root_dir, test_dirs, collect_codecoverage,
+                      app_packages, app_reported_packages, offline_instrumentation, main_reports_dir,
+                      generated_build_file, output_dir)
 
-    gradle_build_file = test_root_dir + os.sep + 'build.gradle'
-    __build_gradle(app_classpath, app_name, monolith_app_path, test_root_dir, test_dirs, collect_codecoverage,
-                  app_packages, offline_instrumentation, main_reports_dir, gradle_build_file, output_dir)
+    else:
+        generated_build_file = test_root_dir + os.sep + 'build.gradle'
+        __build_gradle(app_classpath, app_name, monolith_app_path, test_root_dir, test_dirs, collect_codecoverage,
+                       app_packages, offline_instrumentation, main_reports_dir, generated_build_file, output_dir)
 
-    return ant_build_xml_file, maven_build_xml_file, gradle_build_file
+    return generated_build_file
 
 
 def __build_ant(classpath_list, app_name, monolith_app_paths, test_root_src_dir, test_src_dirs, collect_codecoverage,
@@ -408,6 +452,7 @@ def __build_maven(classpath_list, app_name, monolith_app_paths, test_root_dir, t
                         line('artifactId', 'maven-surefire-plugin')
                         line('version', constants.MAVEN_SURFIRE_VERSION)
                         with tag('configuration'):
+                            line('testFailureIgnore', 'true')
                             line('reportsDirectory', junit_output_dir + '/raw')
                             with tag('systemPropertyVariables'):
                                 line('jacoco-agent.destfile', os.path.join(os.path.abspath(test_src_dir), 'jacoco.exec'))
@@ -466,9 +511,9 @@ def __build_gradle(classpath_list, app_name, monolith_app_paths, test_root_dir, 
     coverage_xml_file = pathlib.PurePath(os.path.join(os.path.abspath(main_coverage_report_dir), 'jacoco.xml')).as_posix()
     coverage_csv_file = pathlib.PurePath(os.path.join(os.path.abspath(main_coverage_report_dir), 'jacoco.csv')).as_posix()
 
-    #here we refer to build_template.gradle, it is a file from the tkltest code. ugly, but works:
-    env = Environment(loader=FileSystemLoader(os.path.join(constants.TKLTEST_CLI_DIR, 'tkltest', 'util', 'unit')))
-    template = env.get_template('build_template.gradle')
+    # load gradle jinja template using package loader
+    env = Environment(loader=PackageLoader('tkltest.util.unit'))
+    template = env.get_template('build_gradle.jinja')
 
     test_dependsOn = ''
     app_classes_for_tests = monolith_app_paths
@@ -496,3 +541,112 @@ def __build_gradle(classpath_list, app_name, monolith_app_paths, test_root_dir, 
 
     with open(build_gradle_file, 'w') as outfile:
         outfile.write(s)
+
+
+def __get_xml_element(parent_element, namespaces, name, text='', duplicate=False):
+    '''
+    add an element to an xml tree
+    :param parent_element: the perent to add to
+    :param namespaces: the tree namesapce, need for find()
+    :param name: element name
+    :param text: element text
+    :param duplicate: bool - create another element, if an element with the same name exist
+    :return: the element that was added
+    '''
+    if not duplicate:
+        element = parent_element.find(name, namespaces)
+    if duplicate or not element:
+        element = ElementTree.Element(name)
+        if text:
+            element.text = text
+        parent_element.append(element)
+    return element
+
+def integrate_tests_into_app_build_file(app_build_files, app_build_type, test_dirs):
+    '''
+    Adding the test directory and the dependencies to the user app file
+    :param app_build_files: the app build file
+    :param app_build_type: build type
+    :param test_dirs: list of test directories
+    :return:
+    '''
+    if not app_build_files:
+        return
+    app_build_file = app_build_files[0]
+    tkltest_app_build_file = os.path.abspath('tkltest_app_' + os.path.basename(app_build_file))
+    dependencies_jars = __get_jars_for_tests_execution()
+    abs_test_dirs = [os.path.abspath(test_src_dir) for test_src_dir in test_dirs if os.path.basename(test_src_dir) not in ['target', 'build']]
+    if app_build_type == 'maven':
+        # tree and root of original build file
+        build_file_tree = ElementTree.parse(app_build_file)
+        project_root = build_file_tree.getroot()
+        namespace = project_root.tag.split('}')[0].strip('{') if project_root.tag.startswith('{') else None
+        namespaces = {'': namespace} if namespace else None
+        if namespace:
+            ElementTree.register_namespace('', namespace)
+
+        # adding jitpack repository:
+        repositories_element = __get_xml_element(project_root, namespaces, 'repositories')
+        repository_element = __get_xml_element(repositories_element, namespaces, 'repository', '', True)
+        __get_xml_element(repository_element, namespaces, 'id', 'jitpack.io')
+        __get_xml_element(repository_element, namespaces, 'url', 'https://jitpack.io')
+
+        # adding the dependencies:
+        dependencies_element = __get_xml_element(project_root, namespaces, 'dependencies')
+        for needed_for_app_build_file, groupId, artifactId, version, classifier in required_lib_jars:
+            if needed_for_app_build_file:
+                dependency_element = __get_xml_element(dependencies_element, namespaces, 'dependency', '', True)
+                __get_xml_element(dependency_element, namespaces, 'groupId', groupId)
+                __get_xml_element(dependency_element, namespaces, 'artifactId', artifactId)
+                __get_xml_element(dependency_element, namespaces, 'version', version)
+                if classifier:
+                    __get_xml_element(dependency_element, namespaces, 'classifier', classifier)
+                __get_xml_element(dependency_element, namespaces, 'scope', 'test')
+
+
+        # adding the test directories:
+        # see http://www.mojohaus.org/build-helper-maven-plugin/usage.html
+        build_element = __get_xml_element(project_root, namespaces, 'build')
+        plugins_element = __get_xml_element(build_element, namespaces, 'plugins')
+        plugin_element = __get_xml_element(plugins_element, namespaces, 'plugin', '', True)
+        __get_xml_element(plugin_element, namespaces, 'groupId', 'org.codehaus.mojo')
+        __get_xml_element(plugin_element, namespaces, 'artifactId', 'build-helper-maven-plugin')
+        __get_xml_element(plugin_element, namespaces, 'version', '3.3.0')
+        executions_element = __get_xml_element(plugin_element, namespaces, 'executions')
+        execution_element = __get_xml_element(executions_element, namespaces, 'execution')
+        __get_xml_element(execution_element, namespaces, 'id', 'add-test-source')
+        __get_xml_element(execution_element, namespaces, 'phase', 'generate-test-sources')
+        __get_xml_element(__get_xml_element(execution_element, namespaces, 'goals',), namespaces, 'goal', 'add-test-source')
+        configuration_element = __get_xml_element(execution_element, namespaces, 'configuration')
+        sources_element = __get_xml_element(configuration_element, namespaces, 'sources')
+
+        for abs_test_dir in abs_test_dirs:
+            __get_xml_element(sources_element, namespaces, 'source', abs_test_dir)
+
+        # writing the new file, removing empty lines
+        lines = minidom.parseString(ElementTree.tostring(project_root)).toprettyxml(indent="   ").split('\n')
+        with open(tkltest_app_build_file, 'w') as f:
+            f.write('\n'.join([line for line in lines if line.strip()]))
+        # todo  - use this comments for all types when ant implemented
+        tkltest_status('Generated tests are integrated into {}. New build file is saved as: {}.'.format(app_build_file, tkltest_app_build_file))
+
+    elif app_build_type == 'gradle':
+        shutil.copy(app_build_file, tkltest_app_build_file)
+        with open(tkltest_app_build_file, 'a') as f:
+            # adding jitpack repository:
+            f.write('\nrepositories{\n maven {url \'https://jitpack.io\'}\n}\n')
+            # adding the dependencies:
+            f.write('dependencies {\n')
+            for needed_for_app_build_file, groupId, artifactId, version, classifier in required_lib_jars:
+                if needed_for_app_build_file:
+                    dependency = ':'.join([groupId, artifactId, version])
+                    if classifier:
+                        dependency += ':' + classifier
+                    f.write('    implementation \'' + dependency + '\'\n')
+            f.write('}\n')
+            f.write('sourceSets.test.java.srcDirs = sourceSets.test.java.srcDirs + [\n')
+            for abs_test_dir in abs_test_dirs:
+                f.write('    \'' + pathlib.PurePath(abs_test_dir).as_posix() + '\',\n')
+            f.write(']\n')
+        # todo  - use this comments for all types when ant implemented
+        tkltest_status('Generated tests are integrated into {}. New build file is saved as: {}.'.format(app_build_file, tkltest_app_build_file))
