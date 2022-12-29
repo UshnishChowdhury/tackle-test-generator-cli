@@ -37,7 +37,7 @@ TackleTest-Unit performs CTD modeling and test-plan generation using the [NIST A
    
 3. Install one or more of the required build systems depending on the TackleTest features used: Ant, Maven, Gradle. Of these systems, Maven is required for installing the CLI; the others are optional and are required only if the respective tool features are used. TackleTest-Unit uses these build systems in two ways:
 
-   - To run the generated tests: Along with generating JUnit test cases, the CLI generates an Ant `build.xml`, a Maven `pom.xml` or a Gradle `build.gradle`, which can be used for building and running the generated tests. Note that for using Gradle to build and run the generated tests, we require Gradle version 7.0 or higher. The build system to use can be configured using the `execute` command option `-bt/--build-type` (see [tkltest-unit Configuration Options](unit/tkltest_unit_config_options.md)). Install the build system that you prefer for running the tests.
+   - To run the generated tests: Along with generating JUnit test cases, the CLI generates an Ant `build.xml`, a Maven `pom.xml` or a Gradle `build.gradle`, which can be used for building and running the generated tests. Note that for using Gradle to build and run the generated tests, we require Gradle version 7.0 or higher, up to 7.4 (version 7.5 is currently not supported). The build system to use can be configured using the `execute` command option `-bt/--build-type` (see [tkltest-unit Configuration Options](unit/tkltest_unit_config_options.md)). Install the build system that you prefer for running the tests.
    
    - To collect library dependencies of the application under test (AUT): The CLI can use the AUT's build file to collect the AUT's library dependencies automatically. This feature is supported for Gradle, Ant and Maven. Alternatively, the user has to specify the dependencies manually in a text file (see [Specifying the app under test](unit/user_guide.md#specifying-the-app-under-test)). If you plan to use the dependency computation feature with a Gradle or Ant build file, install Gradle or Ant respectively.
 
@@ -102,21 +102,45 @@ and re-install it.
 
 ## Building the Docker image and running the CLI via docker or docker-compose
 
-For each released version of TackleTest, the docker image (tagged with the version number) is published on the GitHub Container Registry. These images can be pulled and used without requiring any set up. For the available images and instructions on using them, please visit the [TackleTest container images](https://github.com/konveyor/tackle-test-generator-cli/pkgs/container/tackle-test-generator-cli) page. To the build the TackleTest container locally using the latest (or a particular) code version, please go through the following instructions.
+For each released version of TackleTest, the docker image (tagged with the version number) is published on the GitHub Container Registry. These images can be pulled and used without requiring any set up. For the available images and instructions on using them, please visit the [TackleTest container images](ttps://github.com/orgs/konveyor/packages?repo_name=tackle-test-generator-cli) page. Note that there are three container images: one each that supports unit and UI testing only, and one that supports both unit and UI testing.
+
+To the build the TackleTest container locally using the latest (or a particular) code version, please go through the following instructions.
 
 To run the CLI using `docker-compose` (to print the CLI `help` message), run one of the following commands in the CLI directory,
 which builds the docker image for the CLI (called `tkltest-cli`) and then runs the CLI command; the docker
 container is removed upon completion of the CLI command.
 
+Consolidated unit and UI testing image:
 ```buildoutcfg
 docker-compose run --rm tkltest-cli tkltest-unit --help
 docker-compose run --rm tkltest-cli tkltest-ui --help
 ```
 
+Unit testing image:
+```buildoutcfg
+docker-compose run --rm tkltest-unit --help
+```
+
+UI testing image:
+```buildoutcfg
+docker-compose run --rm tkltest-ui --help
+```
+
 Alternatively, to build and run the CLI using `docker` instead of `docker-compose`, run these commands in the CLI:
 
+Consolidated unit and UI testing image:
 ```buildoutcfg
 docker build --tag tkltest-cli .
+```
+
+Unit testing image:
+```buildoutcfg
+docker build --file ./setup/tkltestunit.Dockerfile --tag tkltest-unit .
+```
+
+UI testing image:
+```buildoutcfg
+docker build --file ./setup/tkltestui.Dockerfile --tag tkltest-ui .
 ```
 
 Then, assuming `/home/user/tkltest-workspace` is the host directory to be mounted on to the container, the following
@@ -124,6 +148,8 @@ commands can be used:
 ```buildoutcfg
 docker run --rm -v /home/user/tkltest-workspace:/app/tackle-test-cli tkltest-cli tkltest-unit --help
 docker run --rm -v /home/user/tkltest-workspace:/app/tackle-test-cli tkltest-cli tkltest-ui --help
+docker run --rm -v /home/user/tkltest-workspace:/app/tackle-test-cli tkltest-unit --help
+docker run --rm -v /home/user/tkltest-workspace:/app/tackle-test-cli tkltest-ui --help
 ```
 
 The results of test generation or  execution in the container are available under the `/home/user/tkltest-workspace`
@@ -149,6 +175,8 @@ alias tkltest-ui='docker run --rm -v /home/user/tkltest-workspace:/app/tackle-te
 ```buildoutcfg
 alias tkltest-ui='docker-compose run --rm tkltest-cli tkltest-ui'
 ```
+
+If you are using a unit/UI-testing-specific image, exclude `tkltest-cli` from the commands above.
 
 Note that for using the CLI via `docker-compose`, `docker-compose.yml` has to be checkout out (it might be better to clone the repo) and
 that [the current directory is mounted onto the container](https://github.com/konveyor/tackle-test-generator-cli/blob/main/docker-compose.yml#L12). 

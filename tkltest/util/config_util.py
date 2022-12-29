@@ -15,7 +15,6 @@
 # ***************************************************************************
 
 import logging
-import os
 import shutil
 import toml
 import sys
@@ -26,11 +25,11 @@ import re
 import copy
 import xml.etree.ElementTree as ElementTree
 import json
-from . import constants, config_options
-from .logging_util import tkltest_status
-from .constants import *
-from tkltest.util import command_util
-from tkltest.util.unit import dir_util
+from tkltest.util import config_options, command_util
+from tkltest.util.logging_util import tkltest_status
+from tkltest.util.constants import *
+from tkltest.unit.util import dir_util
+from tkltest.ui.util import config_options_ui
 
 
 def load_config(test_level='unit', args=None, config_file=None):
@@ -55,14 +54,22 @@ def load_config(test_level='unit', args=None, config_file=None):
     if args is None and config_file is None:
         return tkltest_config
 
-    # load config toml file and merge it into initialized config; this ensures that options missing
-    # in the toml file are initialized to their default values
     # load config from the file if provided or from the file specified in command line
     if config_file is not None:
         toml_config = toml.load(config_file)
     else:
         toml_config = toml.load(args.config_file)
-    __merge_config(tkltest_config, toml_config)
+
+    # read internal options for tkltest-ui so they can be checked during config merging to avoid
+    # printing warning messages about unsupported options for internal options that occur in the toml file
+    if test_level == 'ui':
+        internal_config_options = config_options_ui.get_options_spec_internal()
+    else:
+        internal_config_options = {}
+
+    # merge config loaded from file into initialized config; this ensures that options missing
+    # in the toml file are initialized to their default values
+    __merge_config(tkltest_config, toml_config, base_config_internal=internal_config_options)
     logging.debug('config: {}'.format(tkltest_config))
 
     # update general options with values specified in command line
@@ -101,7 +108,7 @@ def load_config(test_level='unit', args=None, config_file=None):
     # map base test generator name to the internal code component name
     if subcommand == 'ctd_amplified':
         tkltest_config[args.command][subcommand]['base_test_generator'] = \
-            constants.BASE_TEST_GENERATORS[tkltest_config[args.command][subcommand]['base_test_generator']]
+            BASE_TEST_GENERATORS[tkltest_config[args.command][subcommand]['base_test_generator']]
 
     logging.debug('validated config: {}'.format(tkltest_config))
     return tkltest_config
@@ -279,7 +286,7 @@ def __update_config_with_cli_value(config, options_spec, args):
                     config[opt_name] = opt_value
 
 
-def __merge_config(base_config, update_config, key_prefix=""):
+def __merge_config(base_config, update_config, key_prefix="", base_config_internal={}):
     """Merge two config specs.
 
     Updates base config with data in update config.
@@ -288,10 +295,12 @@ def __merge_config(base_config, update_config, key_prefix=""):
     for key, val in update_config.items():
         full_key = key if key_prefix == "" else key_prefix + '.' + key
         if key not in base_config:
-            tkltest_status('Warning: Unsupported flag in toml file: {}'.format(full_key))
+            if not base_config_internal or key not in base_config_internal:
+                tkltest_status('Warning: Unsupported flag in toml file: {}'.format(full_key))
         if isinstance(val, dict):
             baseval = base_config.setdefault(key, {})
-            __merge_config(baseval, val, full_key)
+            basevalint = base_config_internal.setdefault(key, {})
+            __merge_config(baseval, val, full_key, basevalint)
         else:
             base_config[key] = val
 
@@ -925,9 +934,6 @@ def resolve_tkltest_configs(tkltest_user_config, command):
     else:
         # we first obtain the module properties from the build file
         modules_properties = get_modules_properties(tkltest_user_config)
-        if not modules_properties:
-            tkltest_status('Failed to automatically obtain modules from user build files', error=True)
-            sys.exit(1)
         if len(modules_properties) == 1:
             # we have only one module - we will use the user config
             resolve_app_path(tkltest_user_config)
@@ -1002,6 +1008,7 @@ def get_modules_properties(tkltest_user_config):
     if os.path.isfile(modules_properties_file):
         os.remove(modules_properties_file)
 
+    tkltest_status('Automatically obtaining modules from user build files')
     if app_build_type == 'maven':
         '''
         for each user pom file, we call exec:exec with executable "echo".
@@ -1036,6 +1043,13 @@ def get_modules_properties(tkltest_user_config):
             except subprocess.CalledProcessError as e:
                 tkltest_status('running {} command "{}" failed: {}\n{}'.
                                format(app_build_type, get_modules_command, e, e.stderr), error=True)
+                try:
+                    tkltest_status('Command to obtain modules from user build files failed with the following output:')
+                    get_modules_command = get_modules_command.replace('--quiet', '')
+                    get_modules_command = get_modules_command.replace(' >> ' + modules_properties_file, '')
+                    command_util.run_command(command=get_modules_command, verbose=True)
+                except subprocess.CalledProcessError as e:
+                    pass
                 sys.exit(1)
 
     elif app_build_type == 'gradle':
@@ -1098,6 +1112,10 @@ def get_modules_properties(tkltest_user_config):
 
     with open(modules_properties_file) as f:
         all_modules = json.load(f)
+
+    if not all_modules:
+        tkltest_status('Failed to load modules from properties file {}.'.format(modules_properties_file), error=True)
+
     for module in all_modules:
         if 'classpath' not in module.keys():
             module['classpath'] = ''
@@ -1123,6 +1141,16 @@ def get_modules_properties(tkltest_user_config):
         module = module_entries[0]
         if module['app_path']:
             modules.append(module)
+        else:
+            tkltest_status(' app_path dir of module {} does not exist, omitting the module '.format(module['name']))
+
+    if not modules:
+        tkltest_status('Failed to automatically obtain modules from user build files. all {} modules were omitted.\n'
+                       'for more details, see modules properties at {}'
+                       .format(len(all_modules), modules_properties_file), error=True)
+        sys.exit(1)
+    tkltest_status('Obtained {} module{} from user build files'.format(len(modules),
+                                                                       "" if len(modules) == 1 else "s"))
     return modules
 
 if __name__ == '__main__':
@@ -1131,9 +1159,9 @@ if __name__ == '__main__':
     with open(config_file, 'r') as f:
         file_config = toml.load(f)
     print('file_config={}'.format(file_config))
-    base_config = init_config()
+    base_config = init_config(test_level='ui')
     print('base_config={}'.format(base_config))
-    __merge_config(base_config, file_config)
+    __merge_config(base_config, file_config, base_config_internal=config_options_ui.get_options_spec_internal())
     print('updated_config={}'.format(base_config))
-    failure_msgs = __validate_config(base_config, test_level='unit', command='generate', subcommand='ctd_amplified')
-    print('failure_msgs={}'.format(failure_msgs))
+    # failure_msgs = __validate_config(base_config, test_level='unit', command='generate', subcommand='ctd_amplified')
+    # print('failure_msgs={}'.format(failure_msgs))

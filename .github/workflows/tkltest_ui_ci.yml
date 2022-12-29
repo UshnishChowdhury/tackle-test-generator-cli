@@ -3,28 +3,30 @@ name: TackleTest-UI CI
 on:
   push:
     paths-ignore:
-      - 'tkltest/generate/unit/**'
-      - 'tkltest/execute/unit/**'
-      - 'tkltest/util/unit/**'
-      - 'tkltest/tkltest_unit.py'
+      - 'tkltest/unit/**'
       - 'tkltest-lib/pom.xml'
       - 'doc/**'
-      - '**.md'
-      - '.github/workflows/tkltest_unit_ci.yml'
-      - '.gitattributes'
+      - 'experiment/**'
+      - 'setup/tkltestunit**'
       - 'test/unit/**'
+      - '.github/workflows/tkltest_unit_ci.yml'
+      - '.github/workflows/release**'
+      - '.gitattributes'
+      - '.gitignore'
+      - '**.md'
   pull_request:
     paths-ignore:
-      - 'tkltest/generate/unit/**'
-      - 'tkltest/execute/unit/**'
-      - 'tkltest/util/unit/**'
-      - 'tkltest/tkltest_unit.py'
+      - 'tkltest/unit/**'
       - 'tkltest-lib/pom.xml'
       - 'doc/**'
-      - '**.md'
-      - '.github/workflows/tkltest_unit_ci.yml'
-      - '.gitattributes'
+      - 'experiment/**'
+      - 'setup/tkltestunit**'
       - 'test/unit/**'
+      - '.github/workflows/tkltest_unit_ci.yml'
+      - '.github/workflows/release**'
+      - '.gitattributes'
+      - '.gitignore'
+      - '**.md'
 
 jobs:
   build:
@@ -76,14 +78,10 @@ jobs:
         source venv/bin/activate
         bats --print-output-on-failure test/ui/test_cli.bats
     - name: Run tkltest-ui generate/execute tests - petclinic
-      env:
-        JAVA_HOME: /opt/hostedtoolcache/Java_Adopt_jdk/8.0.292-1/x64
       run: |
         source venv/bin/activate
         bats --print-output-on-failure test/ui/test_cli_petclinic.bats
     - name: Run tkltest-ui generate/execute tests - addressbook
-      env:
-        JAVA_HOME: /opt/hostedtoolcache/Java_Adopt_jdk/8.0.292-1/x64
       run: |
         source venv/bin/activate
         bats --print-output-on-failure test/ui/test_cli_addressbook.bats

@@ -23,8 +23,8 @@ import shutil
 import copy
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__))+os.sep+'..')
 from tkltest.util import config_util, constants, command_util
-from tkltest.util.unit import dir_util, build_util
-from tkltest.generate.unit import generate, augment
+from tkltest.unit.util import dir_util, build_util
+from tkltest.unit.generate import generate, augment
 
 
 class UnitTests(unittest.TestCase):
@@ -253,10 +253,8 @@ class UnitTests(unittest.TestCase):
         # call integrate_tests_into_app_build_file(), check that new pom is created:
         pom_file = config['generate']['app_build_files'][0]
         build_util.integrate_tests_into_app_build_file([pom_file], 'maven', ctd_tests)
-        integrated_pom_file_name = 'tkltest_app_' + os.path.basename(pom_file)
-        self.assertTrue(os.path.isfile(integrated_pom_file_name))
-        integrated_pom_file = os.path.join(os.path.dirname(pom_file), integrated_pom_file_name)
-        shutil.move(integrated_pom_file_name, integrated_pom_file)
+        integrated_pom_file = os.path.join(os.path.dirname(pom_file), 'tkltest_app_' + os.path.basename(pom_file))
+        self.assertTrue(os.path.isfile(integrated_pom_file))
 
         surefire_dir = os.path.join(os.path.dirname(pom_file), 'target', 'surefire-reports')
         shutil.rmtree(surefire_dir, ignore_errors=True)
@@ -297,7 +295,7 @@ class UnitTests(unittest.TestCase):
         shutil.move(local_gradle_file, local_gradle_new_filename)
         local_gradle_file = local_gradle_new_filename
         build_util.integrate_tests_into_app_build_file([local_gradle_file], 'gradle', [ctd_tests])
-        integrated_gradle_file_name = 'tkltest_app_' + os.path.basename(local_gradle_file)
+        integrated_gradle_file_name = os.path.join(os.path.dirname(local_gradle_file), 'tkltest_app_' + os.path.basename(local_gradle_file))
         self.assertTrue(os.path.isfile(integrated_gradle_file_name))
         shutil.move(integrated_gradle_file_name, local_gradle_file)
 
@@ -538,29 +536,28 @@ class UnitTests(unittest.TestCase):
             config['general']['reports_path'] = app_name + '-reports_dir'
         shutil.rmtree(config['general']['test_directory'], ignore_errors=True)
         os.makedirs(config['general']['test_directory'])
-        monolithic_dir = os.path.join(config['general']['test_directory'], 'monolithic')
-        build_file = build_util.generate_build_xml(
-            app_name=app_name,
-            build_type='gradle',
-            monolith_app_path=config['general']['monolith_app_path'],
-            app_classpath=build_util.get_build_classpath(config),
-            test_root_dir=config['general']['test_directory'],
-            test_dirs=[monolithic_dir],
-            # partitions_file=None,
-            target_class_list=[],
-            main_reports_dir=config['general']['reports_path'],
-            app_packages=[],  # for coverage-based augmentation
-            collect_codecoverage=True,  # for coverage-based augmentation
-            offline_instrumentation=True,
-            output_dir=output_dir
-        )
         config['general']['build_type'] = 'gradle'
         test_files = [None, None]
         for use_for_augmentation in [False, True]:
             config['dev_tests']['use_for_augmentation'] = use_for_augmentation
-            shutil.rmtree(monolithic_dir, ignore_errors=True)
-            os.makedirs(monolithic_dir)
+            shutil.rmtree(config['general']['test_directory'], ignore_errors=True)
+            os.makedirs(config['general']['test_directory'])
             shutil.rmtree(config['general']['reports_path'], ignore_errors=True)
+            build_file = build_util.generate_build_xml(
+                app_name=app_name,
+                build_type='gradle',
+                monolith_app_path=config['general']['monolith_app_path'],
+                app_classpath=build_util.get_build_classpath(config),
+                test_root_dir=config['general']['test_directory'],
+                test_dirs=[config['general']['test_directory']],
+                # partitions_file=None,
+                target_class_list=[],
+                main_reports_dir=config['general']['reports_path'],
+                app_packages=[],  # for coverage-based augmentation
+                collect_codecoverage=True,  # for coverage-based augmentation
+                offline_instrumentation=True,
+                output_dir=output_dir
+            )
             augment.augment_with_code_coverage(config, build_file,
                                                config['general']['build_type'],
                                                config['general']['test_directory'],
